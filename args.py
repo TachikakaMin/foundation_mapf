@@ -1,14 +1,9 @@
 import argparse
-import logging
-import os
-import random
-import sys
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
+    """用于解析命令行参数
+    """
+    parser = argparse.ArgumentParser(description='UNet training')
     
     # training
     parser.add_argument('--epochs', '-ep', metavar='E', type=int, default=5, help='Number of epochs')
@@ -27,3 +22,11 @@ def get_args():
                         help='Max number of agents')
     parser.add_argument('--action_dim', '-ad', metavar='AD', type=int, default=5, help='Action types')
     return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = get_args()
+    print(args.epochs)
+    print(args.batch_size) 
+    print(args.learning_rate) 
+    print(args.amp)  
