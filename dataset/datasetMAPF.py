@@ -37,7 +37,9 @@ class MAPFDataset(Dataset):
         
         feature = [self.map_info, self.goal_loc_info, train_data_x] 
         feature = torch.cat(feature, dim=-1)
-        ret_data = {"feature": feature, "action": action_info}
+        feature = torch.permute(feature, (2, 0, 1))
+        mask = action_info.any(-1).unsqueeze(-1)
+        ret_data = {"feature": feature.float(), "action": action_info.float(), "mask": mask}
         return ret_data
 
     def get_action_info(self, frame, next_frame):
@@ -62,7 +64,7 @@ class MAPFDataset(Dataset):
         for mx in check_list:
             mask_mx = torch.any(mx != 0, dim=-1)
             comparison = torch.all(mx == next_frame, axis=-1) & mask_mx & mask_next_frame
-            action_info.append(comparison.unsqueeze(-1))
+            action_info.append(comparison)
 
         action_info = torch.stack(action_info, dim=-1)
         assert(action_info.sum() == self.agent_num)
