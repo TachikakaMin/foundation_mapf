@@ -8,7 +8,7 @@ def get_args():
     # training
     parser.add_argument('--epochs', '-ep', metavar='E', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch_size', '-bs', dest='batch_size', metavar='B', 
-                        type=int, default=32, help='Batch size')
+                        type=int, default=512, help='Batch size')
     parser.add_argument('--learning_rate', '-lr', metavar='LR', type=float, default=1e-5,
                         help='Learning rate', dest='lr')
     parser.add_argument('--load', '-l', type=str, default=False, help='Load model from a .pth file')

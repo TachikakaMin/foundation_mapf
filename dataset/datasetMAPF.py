@@ -9,6 +9,8 @@ from torchvision import transforms, utils
 import yaml
 from yaml import CLoader, Loader
 import orjson
+from tqdm import tqdm
+
 dx = [0, 0, 1, -1, 0]
 dy = [1, -1, 0, 0, 0]
 
@@ -22,7 +24,7 @@ class MAPFDataset(Dataset):
             yaml_files = [self.data_path]
         
         self.train_data, self.action_data = [], []
-        for yaml_file in yaml_files:
+        for yaml_file in tqdm(yaml_files):
             with open(yaml_file, "rb") as f:
                 raw_data = yaml.load(f, Loader=CLoader)
             map_name = raw_data['statistics']['map']
@@ -43,8 +45,9 @@ class MAPFDataset(Dataset):
     def __getitem__(self, idx):
         train_data = self.train_data[idx].permute((2, 0, 1))
         action_info = self.action_data[idx]
-        mask = action_info.any(-1).unsqueeze(-1)
-        ret_data = {"feature": train_data.float(), "action": action_info.float(), "mask": mask}
+        mask = action_info.any(-1)
+        action_info = action_info.argmax(-1).long()
+        ret_data = {"feature": train_data.float(), "action": action_info, "mask": mask}
         return ret_data
 
     def get_action_info(self, frame, next_frame, agent_num):
@@ -71,7 +74,7 @@ class MAPFDataset(Dataset):
             comparison = torch.all(mx == next_frame, axis=-1) & mask_mx & mask_next_frame
             action_info.append(comparison)
 
-        action_info = torch.stack(action_info, dim=-1)
+        action_info = torch.stack(action_info, dim=-1).float()
         assert(action_info.sum() == agent_num)
         return action_info
         
