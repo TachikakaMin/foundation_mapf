@@ -16,33 +16,38 @@ class MAPFDataset(Dataset):
     def __init__(self, data_path, agent_dim):
         self.agent_dim = agent_dim
         self.data_path = data_path
-        with open(self.data_path, "rb") as f:
-            self.raw_data = yaml.load(f, Loader=CLoader)
-        self.map_name = self.raw_data['statistics']['map']
-        self.map_data = self.read_map(self.map_name)
-        self.agent_num, self.agent_locations = self.preprocess_data(self.raw_data)
+        if os.path.isdir(data_path):
+            yaml_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith(".yaml")]
+        else:
+            yaml_files = [self.data_path]
         
-        # (n,n, 1), (n, n, agent_dim), (t, n, n, agent_dim)
-        self.map_info, self.goal_loc_info, self.train_data = self.generate_train_data(self.agent_locations, self.map_data)
-
+        self.train_data, self.action_data = [], []
+        for yaml_file in yaml_files:
+            with open(yaml_file, "rb") as f:
+                raw_data = yaml.load(f, Loader=CLoader)
+            map_name = raw_data['statistics']['map']
+            map_data = self.read_map(map_name)
+            agent_num, agent_locations = self.preprocess_data(raw_data)
+            
+            # (n,n, 1), (n, n, agent_dim), (t, n, n, agent_dim)
+            train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
+            self.train_data.append(train_data)
+            self.action_data.append(action_data)
+        self.train_data = torch.cat(self.train_data, dim=0)
+        self.action_data = torch.cat(self.action_data, dim=0)
+        
+        
     def __len__(self):
-        return self.train_data.shape[0]-1
+        return self.train_data.shape[0]
 
     def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-        train_data_x = self.train_data[idx]
-        train_data_x_next = self.train_data[idx+1]
-        action_info = self.get_action_info(train_data_x, train_data_x_next)
-        
-        feature = [self.map_info, self.goal_loc_info, train_data_x] 
-        feature = torch.cat(feature, dim=-1)
-        feature = torch.permute(feature, (2, 0, 1))
+        train_data = self.train_data[idx].permute((2, 0, 1))
+        action_info = self.action_data[idx]
         mask = action_info.any(-1).unsqueeze(-1)
-        ret_data = {"feature": feature.float(), "action": action_info.float(), "mask": mask}
+        ret_data = {"feature": train_data.float(), "action": action_info.float(), "mask": mask}
         return ret_data
 
-    def get_action_info(self, frame, next_frame):
+    def get_action_info(self, frame, next_frame, agent_num):
         shift_left = torch.zeros_like(frame)
         shift_right = torch.zeros_like(frame)
         shift_up = torch.zeros_like(frame)
@@ -67,35 +72,48 @@ class MAPFDataset(Dataset):
             action_info.append(comparison)
 
         action_info = torch.stack(action_info, dim=-1)
-        assert(action_info.sum() == self.agent_num)
+        assert(action_info.sum() == agent_num)
         return action_info
         
         
         
 
-    def generate_train_data(self, agent_locations, map_data):
+    def generate_train_data(self, agent_num, agent_locations, map_data):
         size_n, size_m = map_data.shape
         max_time = agent_locations.shape[1]
         
         map_info = np.expand_dims(map_data, axis=-1) # (n,m,1)
+        map_info = torch.FloatTensor(map_info)
         train_data = []
+        
+        t = max_time-1
+        goal_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
+        indices = np.arange(agent_num)
+        binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
+        agent_data = agent_locations[:,t,:][:, :2]
+        goal_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
+        goal_loc_info = torch.FloatTensor(goal_loc_info)
+        
         for t in range(max_time):
             current_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
-            indices = np.arange(self.agent_num)
+            indices = np.arange(agent_num)
             binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
-            agent_data = self.agent_locations[:,t,:][:, :2]
+            agent_data = agent_locations[:,t,:][:, :2]
             current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-            train_data.append(current_loc_info)
-        train_data = np.array(train_data)
-        
-        
-        goal_loc_info = train_data[-1]
-        
-        map_info = torch.FloatTensor(map_info)
-        goal_loc_info = torch.FloatTensor(goal_loc_info)
-        train_data = torch.FloatTensor(train_data)
-        
-        return map_info, goal_loc_info, train_data
+            current_loc_info = torch.FloatTensor(goal_loc_info)
+            feature = [map_info, goal_loc_info, current_loc_info] 
+            feature = torch.cat(feature, dim=-1)
+            train_data.append(feature)
+        train_data = torch.stack(train_data)
+        action_data = []
+        for t in range(max_time-1):
+            train_data_x = train_data[t][:,:,self.agent_dim+1:]
+            train_data_x_next = train_data[t+1][:,:,self.agent_dim+1:]
+            action_info = self.get_action_info(train_data_x, train_data_x_next, agent_num)
+            action_data.append(action_info)
+            
+        action_data = torch.stack(action_data)
+        return train_data[:-1], action_data
 
     def read_map(self, map_name):
         map_path = f"map_file/{map_name}"

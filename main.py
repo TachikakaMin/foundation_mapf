@@ -14,8 +14,7 @@ from tqdm import tqdm
 def train(args, model, train_loader):
     optimizer = torch.optim.RMSprop(model.parameters(),
                               lr=args.lr, weight_decay=1e-8, momentum=0.999, foreach=True)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)  # goal: maximize Dice score
-    criterion = nn.CrossEntropyLoss(reduction="mean")
+    criterion = nn.CrossEntropyLoss(reduction="sum")
     global_step = 0
     
     for epoch in range(1, args.epochs + 1):
@@ -44,8 +43,7 @@ if __name__ == "__main__":
     # 模型初始化
     net = UNet(args.feature_dim*2+1, args.action_dim)
     
-    
-    train_data = MAPFDataset("data/sample.yaml", args.feature_dim)
+    train_data = MAPFDataset(args.dataset_path, args.feature_dim)
     train_loader = DataLoader(train_data, shuffle=True,
                               batch_size=args.batch_size, 
                               num_workers=1)
