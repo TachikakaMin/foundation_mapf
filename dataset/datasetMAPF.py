@@ -40,6 +40,7 @@ class MAPFDataset(Dataset):
         file_name = "dataset.npz"
         file_path = os.path.join(save_path, file_name)
         np.savez(file_path, train_data=self.train_data.cpu().numpy(), action_data=self.action_data.cpu().numpy())
+        print("Saved dataset: ", file_path)
         
     def load(self, save_path):
         data = np.load(save_path)
@@ -138,7 +139,7 @@ class MAPFDataset(Dataset):
             binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
             agent_data = agent_locations[:,t,:][:, :2]
             current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-            current_loc_info = torch.FloatTensor(goal_loc_info)
+            current_loc_info = torch.FloatTensor(current_loc_info)
             feature = [map_info, goal_loc_info, current_loc_info] 
             feature = torch.cat(feature, dim=-1)
             train_data.append(feature)
