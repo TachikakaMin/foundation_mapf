@@ -22,6 +22,10 @@ class MAPFDataset(Dataset):
     def __init__(self, data_path, agent_dim):
         self.agent_dim = agent_dim
         self.data_path = data_path
+        if ".npz" in self.data_path:
+            self.load(self.data_path)
+            return
+        
         if os.path.isdir(data_path):
             yaml_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith(".yaml")]
         else:
@@ -30,7 +34,19 @@ class MAPFDataset(Dataset):
         self.parallel_load_data(yaml_files)
         self.train_data = torch.cat(self.train_data, dim=0)
         self.action_data = torch.cat(self.action_data, dim=0)
+        self.save("data")
+    
+    def save(self, save_path):
+        file_name = "dataset.npz"
+        file_path = os.path.join(save_path, file_name)
+        np.savez(file_path, train_data=self.train_data.cpu().numpy(), action_data=self.action_data.cpu().numpy())
         
+    def load(self, save_path):
+        data = np.load(save_path)
+        self.train_data = torch.from_numpy(data['train_data'])
+        self.train_data = torch.FloatTensor(self.train_data)
+        self.action_data = torch.from_numpy(data['action_data'])
+        self.action_data = torch.FloatTensor(self.action_data)
         
     def __len__(self):
         return self.train_data.shape[0]
