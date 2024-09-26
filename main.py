@@ -1,8 +1,6 @@
-import os
 import torch
 import torch.nn as nn
 import numpy as np
-import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from args import get_args
@@ -10,7 +8,7 @@ from models.unet import UNet
 from dataset.datasetMAPF import MAPFDataset
 from tqdm import tqdm
 
-device = "cuda"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def train(args, model, train_loader):
     optimizer = torch.optim.RMSprop(model.parameters(),
@@ -40,9 +38,15 @@ def train(args, model, train_loader):
 
 if __name__ == "__main__":
     args = get_args() 
+    
+    # the number of binary bits can be used to represent the number of agents
     args.feature_dim = int(np.ceil(np.log2(args.max_agent_num)))
     
-    net = UNet(args.feature_dim*2+1, args.action_dim)
+    # every grid of a input map is represented by a feature vector with feature_dim*2+1 features
+    # the first feature represents the existence of obstacle
+    # the next feature_dim features represents the goal position of a specific agent
+    # the next feature_dim features represents the start position of a specific agent
+    net = UNet(args.feature_dim*2+1, args.action_dim)  
     
     train_data = MAPFDataset(args.dataset_path, args.feature_dim)
     train_loader = DataLoader(train_data, shuffle=True,
