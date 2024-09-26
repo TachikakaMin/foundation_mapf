@@ -10,9 +10,13 @@ import yaml
 from yaml import CLoader, Loader
 import orjson
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 dx = [0, 0, 1, -1, 0]
 dy = [1, -1, 0, 0, 0]
+
+
+
 
 class MAPFDataset(Dataset):
     def __init__(self, data_path, agent_dim):
@@ -23,18 +27,7 @@ class MAPFDataset(Dataset):
         else:
             yaml_files = [self.data_path]
         
-        self.train_data, self.action_data = [], []
-        for yaml_file in tqdm(yaml_files):
-            with open(yaml_file, "rb") as f:
-                raw_data = yaml.load(f, Loader=CLoader)
-            map_name = raw_data['statistics']['map']
-            map_data = self.read_map(map_name)
-            agent_num, agent_locations = self.preprocess_data(raw_data)
-            
-            # (n,n, 1), (n, n, agent_dim), (t, n, n, agent_dim)
-            train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
-            self.train_data.append(train_data)
-            self.action_data.append(action_data)
+        self.parallel_load_data(yaml_files)
         self.train_data = torch.cat(self.train_data, dim=0)
         self.action_data = torch.cat(self.action_data, dim=0)
         
@@ -77,7 +70,33 @@ class MAPFDataset(Dataset):
         action_info = torch.stack(action_info, dim=-1).float()
         assert(action_info.sum() == agent_num)
         return action_info
+    
+    
+    
+    # Function to process each YAML file
+    def process_yaml_file(self, yaml_file):
+        with open(yaml_file, "rb") as f:
+            raw_data = yaml.load(f, Loader=CLoader)
+        map_name = raw_data['statistics']['map']
+        map_data = self.read_map(map_name)
+        agent_num, agent_locations = self.preprocess_data(raw_data)
         
+        # (n,n, 1), (n, n, agent_dim), (t, n, n, agent_dim)
+        train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
+        
+        return train_data, action_data
+
+    # Main loading function with parallel processing
+    def parallel_load_data(self, yaml_files):
+        self.train_data, self.action_data = [], []
+        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+            # Submit tasks to the executor for each yaml file
+            futures = {executor.submit(self.process_yaml_file, yaml_file): yaml_file for yaml_file in yaml_files}
+            
+            for future in tqdm(as_completed(futures), total=len(yaml_files)):
+                train_data, action_data = future.result()
+                self.train_data.append(train_data)
+                self.action_data.append(action_data)
         
         
 
