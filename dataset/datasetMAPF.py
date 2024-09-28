@@ -36,7 +36,7 @@ class MAPFDataset(Dataset):
             yaml_files = [self.data_path]
         
         self.parallel_load_data(yaml_files)
-        self.train_data = torch.cat(self.train_data, dim=0)
+        self.train_data = torch.cat(self.train_data, dim=0)  # 沿第0维进行拼接  #(t, n, m, feature_dim)
         self.action_data = torch.cat(self.action_data, dim=0)
         self.save("data")
     
@@ -61,9 +61,10 @@ class MAPFDataset(Dataset):
             futures = {executor.submit(self.process_yaml_file, yaml_file): yaml_file for yaml_file in yaml_files}
             
             for future in tqdm(as_completed(futures), total=len(yaml_files)):
+                # 这里使用 tqdm 库显示进度条，跟踪任务的完成情况
                 train_data, action_data = future.result()
-                self.train_data.append(train_data)
-                self.action_data.append(action_data)
+                self.train_data.append(train_data)  # (number of samples, max_time, n, m, feature_dim)
+                self.action_data.append(action_data) # (number of samples, max_time-1, n, m, 5)
                 
     # Function to process each YAML file
     def process_yaml_file(self, yaml_file):
@@ -73,7 +74,7 @@ class MAPFDataset(Dataset):
         map_data = self.read_map(map_name)
         agent_num, agent_locations = self.preprocess_data(raw_data)
         
-        # (n,n, 1), (n, n, agent_dim), (t, n, n, agent_dim)
+        # (max_time, n, m, feature_dim) (max_time-1, n, m, 5)
         train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
         
         return train_data, action_data
@@ -134,7 +135,7 @@ class MAPFDataset(Dataset):
         binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int) # shape: (agent_num, agent_dim)
         # 将每个智能体的目标位置填充气自身二进制编码
         goal_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-        goal_loc_info = torch.FloatTensor(goal_loc_info)
+          = torch.FloatTensor(goal_loc_info)
         
         train_data = []
         for t in range(max_time):
@@ -159,35 +160,49 @@ class MAPFDataset(Dataset):
             train_data_x_next = train_data[t+1][:,:,self.agent_dim+1:]
             action_info = self.get_action_info(train_data_x, train_data_x_next, agent_num)
             action_data.append(action_info)
+        
+        # shape: (max_time-1, n, m, 5)
         action_data = torch.stack(action_data)
         
         return train_data[:-1], action_data
     
     def get_action_info(self, frame, next_frame, agent_num):
+        """
+        通过比较当前帧（frame）和下一帧（next_frame）中的智能体位置，计算每个智能体在某一时间步采取的动作信息
+        返回的 action_info 包含智能体在每个时间步所采取的动作信息
+        """
         shift_left = torch.zeros_like(frame)
         shift_right = torch.zeros_like(frame)
         shift_up = torch.zeros_like(frame)
         shift_down = torch.zeros_like(frame)
         
         # Left shift
-        shift_left[:, :-1, :] = frame[:, 1:, :]
+        shift_left[:, :-1, :] = frame[:, 1:, :] # 将 frame 的所有元素向左移动一列（原来的第一列被丢弃，最后一列填充 0）
         # Right shift
         shift_right[:, 1:, :] = frame[:, :-1, :]
         # Up shift
         shift_up[:-1, :, :] = frame[1:, :, :]
         # Down shift
         shift_down[1:, :, :] = frame[:-1, :, :]
-        
+        # stay
         not_shift = frame
+        
         action_info = []
         check_list = [shift_left, shift_right, shift_up, shift_down, not_shift]
+        # 检测下一个时间点的map中的每个位置是否有智能体（智能体位置不为 0）。
+        # 如果某个位置有智能体，则掩码为 True，否则为 False。
         mask_next_frame = torch.any(next_frame != 0, dim=-1)
         for mx in check_list:
+            # 之前假设了所有的格子上的智能体都往同一个方向移动一步，变成了map1。
+            # 现在检查这个假设是否成立（即真实的下一个时间点的每个格子的智能体编号是不是和map1一样）
             mask_mx = torch.any(mx != 0, dim=-1)
+            # 比较当前移动方向 mx 和 next_frame，检查是否有智能体移动到了 next_frame 中的某个位置；并且确保这些位置确实有智能体并且是有效的动作            
             comparison = torch.all(mx == next_frame, axis=-1) & mask_mx & mask_next_frame
             action_info.append(comparison)
 
+        # 生成一个包含所有动作信息的张量。张量的形状为 (n, m, 5)
         action_info = torch.stack(action_info, dim=-1).float()
+        # 检查生成的 action_info 中的所有动作信息的总和是否等于智能体数量
         assert(action_info.sum() == agent_num)
         return action_info
         
@@ -202,10 +217,15 @@ class MAPFDataset(Dataset):
         return self.train_data.shape[0]
 
     def __getitem__(self, idx):
+        # 这一步是将张量的维度重新排列，将原来的 (高度, 宽度, 通道数) 变成 (通道数, 高度, 宽度)。
         train_data = self.train_data[idx].permute((2, 0, 1))
         action_info = self.action_data[idx]
-        mask = action_info.any(-1)
+        # 如果某个位置上存在任何动作（即该位置有智能体），则返回 True，否则返回 False。
+        mask = action_info.any(-1) # (n, m)
+        # 那么 argmax(-1) 会返回每个位置的动作索引，表示智能体在该位置上选择了哪个动作。表示每个位置的动作索引。
         action_info = action_info.argmax(-1).long()
+        # mask 感觉不对吧，是需要输入时间步的位置，而不是输出时间步的
+        # action感觉也是，可以看get_action_info
         ret_data = {"feature": train_data.float(), "action": action_info, "mask": mask}
         return ret_data
 
