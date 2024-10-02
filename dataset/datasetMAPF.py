@@ -48,7 +48,7 @@ class MAPFDataset(Dataset):
         self.train_data = torch.FloatTensor(self.train_data)
         self.action_data = torch.from_numpy(data['action_data'])
         self.action_data = torch.FloatTensor(self.action_data)
-        # 没有mask信息吗
+        
         
     def parallel_load_data(self, yaml_files):
         """
