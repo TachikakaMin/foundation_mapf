@@ -86,7 +86,7 @@ class MAPFDataset(Dataset):
             data = f.readlines()
             for l in data[4:]:
                 tmp = l[:-1]
-                tmp = tmp.replace(".", "1").replace("@", "0") # 1 for empty space, 0 for obstacle   # 我觉得换一下更好
+                tmp = tmp.replace(".", "0").replace("@", "1") # 1 for obstacle, 0 for empty space
                 map_data.append(tmp)
         map_data = np.array([list(line) for line in map_data], dtype=int)
         return map_data
@@ -108,14 +108,13 @@ class MAPFDataset(Dataset):
             sublist = agent_locations[i] # 获取第 i 个智能体的路径
             if len(sublist) < max_length:
                 # 用最后一个元素填充
-                agent_locations[i] += [sublist[-1]] * (max_length - len(sublist))
-                # 我新修改的地方
-                # # 获取最后一个位置的 x 和 y 值
-                # last_x, last_y, last_t = sublist[-1]
-                # # 生成新的填充项，x 和 y 不变，t 从 last_t + 1 开始递增
-                # additional_steps = [[last_x, last_y, last_t + j + 1] for j in range(max_length - len(sublist))]
-                # # 将这些填充项添加到原来的路径中
-                # agent_locations[i] += additional_steps
+                # agent_locations[i] += [sublist[-1]] * (max_length - len(sublist))
+                # 获取最后一个位置的 x 和 y 值
+                last_x, last_y, last_t = sublist[-1]
+                # 生成新的填充项，x 和 y 不变，t 从 last_t + 1 开始递增
+                additional_steps = [[last_x, last_y, last_t + j + 1] for j in range(max_length - len(sublist))]
+                # 将这些填充项添加到原来的路径中
+                agent_locations[i] += additional_steps
         agent_locations = np.array(agent_locations, dtype=int)
         return agent_num, agent_locations
     
@@ -135,7 +134,7 @@ class MAPFDataset(Dataset):
         binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int) # shape: (agent_num, agent_dim)
         # 将每个智能体的目标位置填充气自身二进制编码
         goal_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-          = torch.FloatTensor(goal_loc_info)
+        goal_loc_info = torch.FloatTensor(goal_loc_info)
         
         train_data = []
         for t in range(max_time):
@@ -144,7 +143,7 @@ class MAPFDataset(Dataset):
             indices = np.arange(agent_num)
             binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
             current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-            current_loc_info = torch.FloatTensor(goal_loc_info)
+            current_loc_info = torch.FloatTensor(current_loc_info)
             
             feature = [map_info, goal_loc_info, current_loc_info]
             # 将地图信息（map_info）、目标位置信息（goal_loc_info）和当前智能体的位置信息（current_loc_info）连接起来，构成当前时间步的特征向量。 
@@ -192,12 +191,23 @@ class MAPFDataset(Dataset):
         # 检测下一个时间点的map中的每个位置是否有智能体（智能体位置不为 0）。
         # 如果某个位置有智能体，则掩码为 True，否则为 False。
         mask_next_frame = torch.any(next_frame != 0, dim=-1)
-        for mx in check_list:
+        for i, mx in enumerate(check_list):
             # 之前假设了所有的格子上的智能体都往同一个方向移动一步，变成了map1。
             # 现在检查这个假设是否成立（即真实的下一个时间点的每个格子的智能体编号是不是和map1一样）
             mask_mx = torch.any(mx != 0, dim=-1)
             # 比较当前移动方向 mx 和 next_frame，检查是否有智能体移动到了 next_frame 中的某个位置；并且确保这些位置确实有智能体并且是有效的动作            
             comparison = torch.all(mx == next_frame, axis=-1) & mask_mx & mask_next_frame
+            
+            # 将方向结果移回到原来的位置，使得动作信息反映的是当前时间点采取的动作
+            if i == 0:  # origin left shift, now shift right
+                comparison = torch.cat([torch.zeros_like(comparison[:, :1]), comparison[:, :-1]], dim=1)
+            elif i == 1:  # origin right shift
+                comparison = torch.cat([comparison[:, 1:], torch.zeros_like(comparison[:, :1])], dim=1)
+            elif i == 2:  # origin up shift
+                comparison =  torch.cat([torch.zeros_like(comparison[:1, :]), comparison[:-1, :]], dim=0)
+            elif i == 3:  # origin down shift
+                comparison = torch.cat([comparison[1:, :], torch.zeros_like(comparison[:1, :])], dim=0)
+            
             action_info.append(comparison)
 
         # 生成一个包含所有动作信息的张量。张量的形状为 (n, m, 5)
