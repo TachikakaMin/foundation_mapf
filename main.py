@@ -124,9 +124,45 @@ def train(args, model, train_loader):
             optimizer.step()
             global_step += 1
             epoch_loss += loss.item()
-        test_loss = test(args, model)
-        model.train()
-        print(epoch_loss, test_loss)
+        model.eval()
+        batch = train_loader.dataset[0]
+        for i in range(47):
+            feature = batch["feature"].unsqueeze(0).to(device)
+            mask = batch["mask"].unsqueeze(0).to(device)
+            pred = model(feature)
+            pred = pred.argmax(dim=1) * mask
+            new_feature = feature.clone()
+            robot_locations = mask[0].nonzero()
+
+            directions = {
+                1: (-1, 0),  # Move up
+                2: (0, 1),   # Move right
+                3: (1, 0),   # Move down
+                4: (0, -1)   # Move left
+            }
+            # Iterate over all robot locations
+            for loc in robot_locations:
+                i, j = loc  # Get the (i, j) location of the robot
+
+                # Get the action from the pred tensor for this location
+                action = pred[i, j]
+
+                # Get the movement direction based on the action
+                if action in directions:  # Ignore if action is 0 (no movement)
+                    di, dj = directions[action]
+                    
+                    # Compute the new location
+                    new_i, new_j = i + di, j + dj
+
+                    # Ensure the new location is within bounds
+                    if 0 <= new_i < 32 and 0 <= new_j < 32:
+                        # Move the robot to the new location by updating the last 10 dimensions
+                        # Clear robot's presence from the current location
+                        new_feature[11:, i, j] = 0
+
+                        # Set robot's presence in the new location
+                        new_feature[11:, new_i, new_j] = feature[11:, i, j]
+        print(epoch_loss)
 
 if __name__ == "__main__":
     args = get_args() 
@@ -140,6 +176,3 @@ if __name__ == "__main__":
                               num_workers=1)
     
     train(args, net, train_loader)
-    
-    
-    

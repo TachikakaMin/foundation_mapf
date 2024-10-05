@@ -229,11 +229,33 @@ class MAPFDataset(Dataset):
         return self.train_data.shape[0]
 
     def __getitem__(self, idx):
+        """_summary_
+
+        Args:
+            idx (_type_): time step index
+
+        Returns:
+            _type_: _description_
+        """
+        # 重新排列维度，将 (高度, 宽度, 通道数) 变成 (通道数, 高度, 宽度)
         train_data = self.train_data[idx].permute((2, 0, 1))
+        # 获取当前帧的 action 信息，形状为 (n, m, 动作维度)
         action_info = self.action_data[idx]
-        mask = action_info.any(-1)
-        action_info = action_info.argmax(-1).long()
-        ret_data = {"feature": train_data.float(), "action": action_info, "mask": mask}
+        # 如果某个位置上存在任何动作（即该位置有智能体），则返回 True，否则返回 False。
+        mask = action_info.any(-1) # (n, m)
+        
+        # 创建一个全零张量，用于存储每个位置的动作索引
+        action_info_result = torch.zeros_like(mask, dtype=torch.long)
+        
+        # 在 mask 为 True 的位置执行 argmax(-1)，表示计算动作的最大值索引
+        # 然后将结果加 1 # 左：1，右：2，上：3，下：4，停留：5;没有agent:0
+        action_info_result[mask] = action_info[mask].argmax(-1) + 1  # 只对 mask 为 True 的位置执行
+        
+        # # 那么 argmax(-1) 会返回每个位置的动作索引，表示智能体在该位置上选择了哪个动作。表示每个位置的动作索引。
+        # action_info = action_info.argmax(-1).long()
+        # # mask 感觉不对吧，是需要输入时间步的位置，而不是输出时间步的
+        # # action感觉也是，可以看get_action_info
+        ret_data = {"feature": train_data.float(), "action": action_info_result, "mask": mask}
         return ret_data
 
 
