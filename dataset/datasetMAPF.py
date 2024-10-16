@@ -246,8 +246,8 @@ class MAPFDataset(Dataset):
         action_info_result = torch.zeros_like(mask, dtype=torch.long)
         
         # 在 mask 为 True 的位置执行 argmax(-1)，表示计算动作的最大值索引
-        # 然后将结果加 1 # 左：1，右：2，上：3，下：4，停留：5;没有agent:0
-        action_info_result[mask] = action_info[mask].argmax(-1) + 1  # 只对 mask 为 True 的位置执行
+        # 然后将结果加 1 # 左：0，右：1，上：2，下：3，停留：4;没有agent:0  # 后面会mask掉,所以两个都可以是0
+        action_info_result[mask] = action_info[mask].argmax(-1)   # 只对 mask 为 True 的位置执行
         
         # # 那么 argmax(-1) 会返回每个位置的动作索引，表示智能体在该位置上选择了哪个动作。表示每个位置的动作索引。
         # action_info = action_info.argmax(-1).long()

@@ -8,50 +8,77 @@ from models.unet import UNet
 from dataset.datasetMAPF import MAPFDataset
 from tqdm import tqdm
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+def train(args, model, train_loader, optimizer, loss_fn, device='cuda'):
+    """
+    Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
 
-def train(args, model, train_loader):
-    optimizer = torch.optim.RMSprop(model.parameters(),
-                              lr=args.lr, weight_decay=1e-5, momentum=0.999, foreach=True)
-    criterion = nn.CrossEntropyLoss(reduction="none")  #  reduction="none"，因此每个样本的损失都保留为独立值(不进行取平均之类的操作。结合掩码（mask）来只计算某些特定样本的损失，或 reduction="none"，因此每个样本的损失都保留为独立值。这个设计通常用于后续进行某些自定义操作，比如结合掩码（mask）来只计算某些特定样本的损失。
-    global_step = 0
+    Args:
+        args: Argument object that contains training configurations like learning rate and epochs.
+        model: The neural network model (UNet).
+        train_loader: Dataloader for the training dataset.
+        optimizer: Optimizer for training (optional).
+        loss_fn: Loss function (optional, default is CrossEntropyLoss with reduction="none").
+        device: Device to run the training on (default is 'cuda').
+    """
+    
     model.to(device)
+    model.train()
+
     for epoch in range(1, args.epochs + 1):
-        model.train()
         epoch_loss = 0
+
         for batch in tqdm(train_loader):
-            feature = batch["feature"].to(device)  # dimension = batch_size
+            # Load data onto the correct device (CPU/GPU)
+            feature = batch["feature"].to(device)
             action_y = batch["action"].to(device)
             mask = batch["mask"].to(device)
+
+            # Forward pass
             pred = model(feature)
-            loss = criterion(pred, action_y)  # 返回的是一个与 pred 和 action_y 形状相同的张量，每个元素对应于某个样本的某个位置的分类损失。
-            loss = (loss * mask.float()).max()  # 只取loss最大的某个样本中的某个位置  # 为啥不取平均值
-            # non_zero_elements = mask.sum()
-            # loss = loss/non_zero_elements
+            
+            # Compute loss with reduction="none" and apply mask
+            loss = loss_fn(pred, action_y)  # Loss for each element
+            loss = (loss * mask.float()).max()
+            averaged_loss = loss.mean(dim=0)  # Averaging across the batch dimension
+            max_loss = averaged_loss.max()  #Select the maximum value from the [32, 32] averaged loss
+            
+            # Backward pass and optimization
             optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1) # 防止梯度爆炸，通过对模型参数的梯度进行裁剪，限制其范数的最大值不超过 1。
+            max_loss.backward()
+
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
-            global_step += 1
+
             epoch_loss += loss.item()
-        print(epoch_loss)
+
+        print(f"Epoch {epoch}/{args.epochs}, Loss: {epoch_loss}")
+
 
 if __name__ == "__main__":
     args = get_args() 
-    
     # the number of binary bits can be used to represent the number of agents
-    args.feature_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    
+    args.agent_dim = int(np.ceil(np.log2(args.max_agent_num)))
     # every grid of a input map is represented by a feature vector with feature_dim*2+1 features
     # the first feature represents the existence of obstacle
     # the next feature_dim features represents the goal position of a specific agent
     # the next feature_dim features represents the start position of a specific agent
-    net = UNet(args.feature_dim*2+1, args.action_dim)  
+    feature_channels = args.agent_dim * 2 + 1
     
+    # model
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    net = UNet(n_channels=feature_channels, n_classes=args.action_dim, bilinear=False)
+    # net.use_checkpointing() 
+    optimizer = torch.optim.RMSprop(net.parameters(),
+                              lr=args.lr, weight_decay=1e-5, momentum=0.999, foreach=True)
+    loss_fn = nn.CrossEntropyLoss(reduction="none")  #  reduction="none"，因此每个样本的损失都保留为独立值(不进行取平均之类的操作。结合掩码（mask）来只计算某些特定样本的损失，或 reduction="none"，因此每个样本的损失都保留为独立值。这个设计通常用于后续进行某些自定义操作，比如结合掩码（mask）来只计算某些特定样本的损失。
+
     
+    # dataset 
     train_data = MAPFDataset(args.dataset_path, args.feature_dim)  # input shape: (num_samples, 21, 32, 32) action output shape: (num_samples, 32, 32)
     train_loader = DataLoader(train_data, shuffle=True,  
                               batch_size=args.batch_size, 
                               num_workers=1)
     
+    # train
     train(args, net, train_loader)
