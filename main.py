@@ -13,65 +13,27 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 def train(args, model, train_loader):
     optimizer = torch.optim.RMSprop(model.parameters(),
                               lr=args.lr, weight_decay=1e-5, momentum=0.999, foreach=True)
-    criterion = nn.CrossEntropyLoss(reduction="none")
+    criterion = nn.CrossEntropyLoss(reduction="none")  #  reduction="none"，因此每个样本的损失都保留为独立值(不进行取平均之类的操作。结合掩码（mask）来只计算某些特定样本的损失，或 reduction="none"，因此每个样本的损失都保留为独立值。这个设计通常用于后续进行某些自定义操作，比如结合掩码（mask）来只计算某些特定样本的损失。
     global_step = 0
     model.to(device)
     for epoch in range(1, args.epochs + 1):
         model.train()
         epoch_loss = 0
         for batch in tqdm(train_loader):
-            feature = batch["feature"].to(device)
+            feature = batch["feature"].to(device)  # dimension = batch_size
             action_y = batch["action"].to(device)
             mask = batch["mask"].to(device)
             pred = model(feature)
-            loss = criterion(pred, action_y)
-            loss = (loss * mask.float()).max()
+            loss = criterion(pred, action_y)  # 返回的是一个与 pred 和 action_y 形状相同的张量，每个元素对应于某个样本的某个位置的分类损失。
+            loss = (loss * mask.float()).max()  # 只取loss最大的某个样本中的某个位置  # 为啥不取平均值
             # non_zero_elements = mask.sum()
             # loss = loss/non_zero_elements
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1) # 防止梯度爆炸，通过对模型参数的梯度进行裁剪，限制其范数的最大值不超过 1。
             optimizer.step()
             global_step += 1
             epoch_loss += loss.item()
-        model.eval()
-        batch = train_loader.dataset[0]
-        for i in range(47):
-            feature = batch["feature"].unsqueeze(0).to(device)
-            mask = batch["mask"].unsqueeze(0).to(device)
-            pred = model(feature)
-            pred = pred.argmax(dim=1) * mask
-            new_feature = feature.clone()
-            robot_locations = mask[0].nonzero()
-
-            directions = {
-                1: (-1, 0),  # Move up
-                2: (0, 1),   # Move right
-                3: (1, 0),   # Move down
-                4: (0, -1)   # Move left
-            }
-            # Iterate over all robot locations
-            for loc in robot_locations:
-                i, j = loc  # Get the (i, j) location of the robot
-
-                # Get the action from the pred tensor for this location
-                action = pred[i, j]
-
-                # Get the movement direction based on the action
-                if action in directions:  # Ignore if action is 0 (no movement)
-                    di, dj = directions[action]
-                    
-                    # Compute the new location
-                    new_i, new_j = i + di, j + dj
-
-                    # Ensure the new location is within bounds
-                    if 0 <= new_i < 32 and 0 <= new_j < 32:
-                        # Move the robot to the new location by updating the last 10 dimensions
-                        # Clear robot's presence from the current location
-                        new_feature[11:, i, j] = 0
-
-                        # Set robot's presence in the new location
-                        new_feature[11:, new_i, new_j] = feature[11:, i, j]
         print(epoch_loss)
 
 if __name__ == "__main__":
@@ -86,8 +48,9 @@ if __name__ == "__main__":
     # the next feature_dim features represents the start position of a specific agent
     net = UNet(args.feature_dim*2+1, args.action_dim)  
     
-    train_data = MAPFDataset(args.dataset_path, args.feature_dim)
-    train_loader = DataLoader(train_data, shuffle=True,
+    
+    train_data = MAPFDataset(args.dataset_path, args.feature_dim)  # input shape: (num_samples, 21, 32, 32) action output shape: (num_samples, 32, 32)
+    train_loader = DataLoader(train_data, shuffle=True,  
                               batch_size=args.batch_size, 
                               num_workers=1)
     
