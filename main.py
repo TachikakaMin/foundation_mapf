@@ -1,8 +1,6 @@
-import os
 import torch
 import torch.nn as nn
 import numpy as np
-import torch.optim as optim
 from torch.utils.data import DataLoader
 from copy import deepcopy as dp
 from args import get_args

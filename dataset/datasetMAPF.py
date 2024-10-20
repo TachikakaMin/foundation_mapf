@@ -12,9 +12,9 @@ import orjson
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
+# five actions the agent can take:[left, right, up, down, stay]->[[0,-1],[0,1],[1,0],[-1,0],[0,0]]
 dx = [0, 0, 1, -1, 0]
 dy = [1, -1, 0, 0, 0]
-
 
 
 
@@ -22,12 +22,16 @@ class MAPFDataset(Dataset):
     def __init__(self, data_path, agent_dim):
         self.agent_dim = agent_dim
         self.data_path = data_path
+        
+        # .npz are preprocessed data. 
+        # just load and convert them into pytorch tensors.
         if ".npz" in self.data_path:
             self.load(self.data_path)
             print("npz")
             return
         
         if os.path.isdir(data_path):
+            # A list containing the paths of all .yaml files.
             yaml_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith(".yaml")]
         else:
             yaml_files = [self.data_path]
