@@ -27,6 +27,7 @@ class MAPFDataset(Dataset):
         # just load and convert them into pytorch tensors.
         if ".npz" in self.data_path:
             self.load(self.data_path)
+            print("npz")
             return
         
         if os.path.isdir(data_path):
@@ -40,8 +41,14 @@ class MAPFDataset(Dataset):
         self.action_data = torch.cat(self.action_data, dim=0)
         self.save("data")
     
-    def load(self, load_path):
-        data = np.load(load_path)
+    def save(self, save_path):
+        file_name = "dataset.npz"
+        file_path = os.path.join(save_path, file_name)
+        np.savez(file_path, train_data=self.train_data.cpu().numpy(), action_data=self.action_data.cpu().numpy())
+        print("Saved dataset: ", file_path)
+        
+    def load(self, save_path):
+        data = np.load(save_path)
         self.train_data = torch.from_numpy(data['train_data'])
         self.train_data = torch.FloatTensor(self.train_data)
         self.action_data = torch.from_numpy(data['action_data'])
@@ -246,8 +253,8 @@ class MAPFDataset(Dataset):
         action_info_result = torch.zeros_like(mask, dtype=torch.long)
         
         # 在 mask 为 True 的位置执行 argmax(-1)，表示计算动作的最大值索引
-        # 然后将结果加 1 # 左：1，右：2，上：3，下：4，停留：5;没有agent:0
-        action_info_result[mask] = action_info[mask].argmax(-1) + 1  # 只对 mask 为 True 的位置执行
+        # 然后将结果加 1 # 左：0，右：1，上：2，下：3，停留：4;没有agent:0  # 后面会mask掉,所以两个都可以是0
+        action_info_result[mask] = action_info[mask].argmax(-1)   # 只对 mask 为 True 的位置执行
         
         # # 那么 argmax(-1) 会返回每个位置的动作索引，表示智能体在该位置上选择了哪个动作。表示每个位置的动作索引。
         # action_info = action_info.argmax(-1).long()
