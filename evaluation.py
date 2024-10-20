@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-def generate_test(seed=0, h=16, w=16, agent_num=10, agent_dim=3):
+def generate_test(args):
     """
     生成测试数据，包括智能体当前位置、目标位置和地图特征信息。
 
@@ -21,11 +21,11 @@ def generate_test(seed=0, h=16, w=16, agent_num=10, agent_dim=3):
     - mp_feature (FloatTensor): 地图特征。
     """
     
-    np.random.seed(seed)
-    
+    np.random.seed(args.seed)
+    h = w = 16
     # 初始化地图特征
     mp_feature = np.zeros((h, w, 1), dtype=int)
-    
+    agent_num = 10
     # 生成所有位置并随机打乱
     all_positions = [[x, y] for x in range(h) for y in range(w)]
     np.random.shuffle(all_positions)
@@ -35,11 +35,11 @@ def generate_test(seed=0, h=16, w=16, agent_num=10, agent_dim=3):
     agent_goals = np.array(all_positions[agent_num:2 * agent_num])
     
     # 初始化目标位置的二进制编码信息
-    goal_loc_info = np.zeros((h, w, agent_dim), dtype=int)   # 用来存储目标位置的二进制编码信息。
+    goal_loc_info = np.zeros((h, w, args.agent_dim), dtype=int)   # 用来存储目标位置的二进制编码信息。
     indices = np.arange(agent_num)
-    
+    print(args.agent_dim)
     # 为每个智能体生成二进制编码（从1开始）
-    binary_strings = np.array([list(format(i + 1, f'0{agent_dim}b')) for i in indices], dtype=int)
+    binary_strings = np.array([list(format(i + 1, f'0{args.agent_dim}b')) for i in indices], dtype=int)
     
     # 将目标位置填入二进制编码
     goal_loc_info[agent_goals[:, 0], agent_goals[:, 1]] = binary_strings
@@ -146,9 +146,9 @@ def cal_dis(agent_cur, agent_goals):
     return ans
 
 
-def evaluate(args, model, device):
+def evaluate(args, model):
     model.eval()
-    agent_num, agent_curr, agent_goals, goal_loc_info, mp_feature = generate_test()
+    agent_num, agent_curr, agent_goals, goal_loc_info, mp_feature = generate_test(args)
     h, w = mp_feature.shape[:2]
     for i in range(100):
         current_loc_info = np.zeros((h, w, args.agent_dim), dtype=int)
@@ -160,12 +160,12 @@ def evaluate(args, model, device):
         # 将地图特征 mp_feature、目标位置 goal_loc_info 和当前智能体位置 current_loc_info 拼接在一起，形成输入特征。
         in_feature = [mp_feature, goal_loc_info, current_loc_info]
         in_feature = torch.cat(in_feature, dim=-1).permute((2, 0, 1))
-        in_feature = in_feature.unsqueeze(0).to(device) # 增加 batch 维度，变成 (1, channels, h, w)
+        in_feature = in_feature.unsqueeze(0).to(args.device) # 增加 batch 维度，变成 (1, channels, h, w)
         
         with torch.no_grad():
-            output = model(in_feature)
+            _, output = model(in_feature)
         output = output.squeeze(0).permute((1, 2, 0)).argmax(-1) # 将张量维度调整为 (h, w, n_classes); 选择动作预测的最大值，即每个智能体在当前位置的最佳动作（根据模型输出的概率最高的动作）
-        mask = current_loc_info.any(-1).to(device)
+        mask = current_loc_info.any(-1).to(args.device)
         action = output * mask
         agent_curr = move_agent(agent_curr, action, mp_feature)
         distance = cal_dis(agent_curr, agent_goals)

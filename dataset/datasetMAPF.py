@@ -24,6 +24,7 @@ class MAPFDataset(Dataset):
         self.data_path = data_path
         if ".npz" in self.data_path:
             self.load(self.data_path)
+            print("npz")
             return
         
         if os.path.isdir(data_path):
