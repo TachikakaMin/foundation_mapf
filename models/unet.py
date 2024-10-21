@@ -37,7 +37,7 @@ class UNet(nn.Module):
         x = self.up4(x, x1)
         logits = self.output_conv(x)
         prob = self.softmax(logits)
-        return prob
+        return logits, prob
 
     def use_checkpointing(self):
         """checkpoint通过在前向传播过程中

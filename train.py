@@ -11,7 +11,7 @@ from args import get_args
 from models.unet import UNet
 from data_preprocess.datasetMAPF import MAPFDataset
 
-def train(args, model, train_loader, val_loader, optimizer, loss_fn, device='cuda'):
+def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
     """
     Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
     Also evaluates on validation set after each epoch.
@@ -30,6 +30,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device='cud
     for epoch in range(1, args.epochs + 1):
         # Set model to training mode
         model.train()  
+        train_loss = 0
         for batch in tqdm(train_loader):
             # Load data onto the correct device (CPU/GPU)
             feature = batch["feature"].to(device)  # shape:[batch_size, channel_num, n, m]
@@ -37,35 +38,35 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device='cud
             mask = batch["mask"].to(device)  # shape:[batch_size, n, m]
 
             # Forward pass
-            pred = model(feature)  # shape:[batch_size, action_dim, n, m]
+            logit, _ = model(feature)  # shape:[batch_size, action_dim, n, m]
             
             # Compute loss and apply mask
-            loss = loss_fn(pred, action_y)  # shape:[batch_size, n, m]
+            loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
             loss = loss * mask.float() # shape:[batch_size, n, m]
-            averaged_loss = loss.mean(dim=0)  # shape:[n, m]
-            max_loss = averaged_loss.max()  # scalar 
+            averaged_loss = loss.mean() # scalar 
+           
             
             # Backward pass and optimization
             optimizer.zero_grad()
-            max_loss.backward()
+            averaged_loss.backward()
 
             # Gradient clipping to prevent exploding gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
             
-        # Train loss for last batch in a epoch
-        train_loss = max_loss.item()
-        print(f"Epoch {epoch}/{args.epochs}, Training Loss: {train_loss}")
+            # Train loss for epoch
+            train_loss += loss.sum().item()
+        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss}")
 
         # Evaluate on validation set
         val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
-        print(f"Epoch {epoch}/{args.epochs}, Validation Loss: {val_loss}")
+        print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
         
         # Evaluate path finding
         sample_agent_path_animation(model, val_loader, a=0, b=0, device=device, steps=100)
         
 
-def evaluate_valid_loss(model, val_loader, loss_fn, device='cuda'):
+def evaluate_valid_loss(model, val_loader, loss_fn, device):
     """
     Evaluates the model on the validation set.
 
@@ -90,14 +91,12 @@ def evaluate_valid_loss(model, val_loader, loss_fn, device='cuda'):
             mask = batch["mask"].to(device)
 
             # Forward pass
-            pred = model(feature)
+            logits, _ = model(feature)
 
             # Compute the loss and apply mask
-            loss = loss_fn(pred, action_y)
+            loss = loss_fn(logits, action_y)
             loss = loss * mask.float()
-            averaged_loss = loss.mean(dim=0)
-            max_loss = averaged_loss.max()
-            val_loss += max_loss.item()
+            val_loss += loss.sum().item()
 
     val_loss /= len(val_loader)  
     return val_loss
@@ -142,7 +141,9 @@ def sample_agent_path_animation(model, val_loader, a, b, device, steps=100):
     anim = None
 
     global sample_feature, sample_curr_mask, sample_current_loc, current_loc_tuple
-    sample_feature, sample_agent_num, sample_map, sample_curr_mask, sample_current_loc, current_loc_tuple, sample_goal_loc, goal_loc_dict = sample_agent_information(val_loader, a, b)
+    sample_feature, sample_agent_num, sample_map, \
+        sample_curr_mask, sample_current_loc, current_loc_tuple, \
+        sample_goal_loc, goal_loc_dict = sample_agent_information(val_loader, a, b)
     
     fig, ax = plt.subplots()
     # 创建动画，调用更新函数
@@ -223,10 +224,10 @@ def plot_update(frame, ax, model, agent_num, map_grid, goal_loc, goal_locs_dic, 
 
 def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, current_loc, current_loc_tuple, goal_loc, device):
     model.eval()
-    
+    curr_mask = curr_mask.to(device)
     in_feature = feature.unsqueeze(0).to(device) # 增加 batch 维度; shape:[1, channel_len, n, m]
     with torch.no_grad():
-        pred = model(in_feature) # shape:[1, action_dim, n, m]
+        _, pred = model(in_feature) # shape:[1, action_dim, n, m]
     
     # 选择概率最高的动作
     pred = pred.squeeze(0).permute((1, 2, 0)).argmax(-1) # shape:[n, m]
