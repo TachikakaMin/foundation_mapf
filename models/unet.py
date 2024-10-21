@@ -22,7 +22,7 @@ class UNet(nn.Module):
         self.up3 = (Up(256, 128 // factor, bilinear))
         self.up4 = (Up(128, 64, bilinear))
         self.output_conv = (OutConv(64, n_classes))
-        # 将模型的输出转换为概率分布，dim=-1 表示在最后一个维度上进行转换
+        # 将模型的输出转换为概率分布
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):

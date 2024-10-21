@@ -16,7 +16,7 @@ def get_args():
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
     parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
     parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
-    parser.add_argument('--dataset_path', '-dp', type=str, default="data/sample.yaml")
+    parser.add_argument('--dataset_path', '-dp', type=str, default="sample_data")
 
     #MAPF settings
     parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=1000, 
