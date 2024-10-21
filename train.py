@@ -9,7 +9,7 @@ from tqdm import tqdm
 import itertools
 from args import get_args
 from models.unet import UNet
-from preprocess_data.datasetMAPF import MAPFDataset
+from data_preprocess.datasetMAPF import MAPFDataset
 
 def train(args, model, train_loader, val_loader, optimizer, loss_fn, device='cuda'):
     """
@@ -63,9 +63,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device='cud
         
         # Evaluate path finding
         sample_agent_path_animation(model, val_loader, a=0, b=0, device=device, steps=100)
-        # sample_feature, sample_agent_num, sample_map, sample_curr_mask, sample_current_loc, current_loc_tuple, sample_goal_loc, goal_loc_dict = sample_agent_information(val_loader, a=0, b=0)
-        # plot_mapf_with_animation(model, _map, current_loc, current_loc_tuple, goal_loc_dic, feature, agent_num, curr_mask, goal_loc, steps=100, device='cuda')
-        # print("asdf:", goal_loc_dict)
+        
 
 def evaluate_valid_loss(model, val_loader, loss_fn, device='cuda'):
     """
@@ -109,12 +107,6 @@ def sample_agent_information(val_loader, a, b):
     """
     第 a 个 batch 中第 b 个样本的智能体信息。
 
-    Args:
-    - model: 训练好的模型。
-    - val_loader: 验证集数据加载器。
-    - n: 批次的索引（第 n 个 batch）。
-    - m: 批次中样本的索引（第 m 个样本）。
-    - device: 运行设备（默认 'cuda'）。
     """
     # 得到第 a 个 batch
     val_loader_iter = iter(val_loader)

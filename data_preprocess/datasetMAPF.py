@@ -12,11 +12,6 @@ import orjson
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
-# five actions the agent can take:[left, right, up, down, stay]->[[0,-1],[0,1],[1,0],[-1,0],[0,0]]
-dx = [0, 0, 1, -1, 0]
-dy = [1, -1, 0, 0, 0]
-
-
 
 class MAPFDataset(Dataset):
     def __init__(self, data_path, agent_dim):

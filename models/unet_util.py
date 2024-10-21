@@ -21,6 +21,7 @@ class DoubleConv(nn.Module):
         if not mid_channels:
             # padding=1 保证输入输出的宽度和高度一致
             mid_channels = out_channels
+        
         self.double_conv = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(mid_channels),
