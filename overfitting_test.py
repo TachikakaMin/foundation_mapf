@@ -62,7 +62,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
         
         # sample path visualization
         # if epoch % 5 == 0:
-        if epoch  == 1:
+        if epoch  == 99:
             current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device)
             animate_paths(trajectories, goal_positions, _map, interval=500)
         
@@ -89,19 +89,14 @@ if __name__ == "__main__":
     loss_fn = nn.CrossEntropyLoss(reduction="none")  
 
     # dataset 
-    data = MAPFDataset(args.dataset_path, agent_idx_dim)  
-    # Split dataset into train and validation sets
-    train_size = int(0.8 * len(data))  # 80% training, 20% validation
-    val_size = len(data) - train_size
-    train_data, val_data = random_split(data, [train_size, val_size])  
-    
+    data = MAPFDataset(args.dataset_path, agent_idx_dim) 
     # dataloaders
-    train_loader = DataLoader(train_data, shuffle=True,  
-                              batch_size=args.batch_size,  
+    train_loader = DataLoader(data, shuffle=True,  
+                              batch_size=1,  
                               num_workers=0)
-    val_loader = DataLoader(val_data, shuffle=False,  
-                              batch_size=args.batch_size, 
-                              num_workers=0)
+    val_loader = DataLoader(data, shuffle=False,  
+                              batch_size=1, 
+                              num_workers=0) 
     
     # train
     train(args, net, train_loader, val_loader, optimizer, loss_fn, device)
