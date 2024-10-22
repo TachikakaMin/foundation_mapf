@@ -2,14 +2,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm
-from matplotlib.animation import FuncAnimation
 from tqdm import tqdm
-import itertools
 from args import get_args
 from models.unet import UNet
 from data_preprocess.datasetMAPF import MAPFDataset
+from evaluation import evaluate_valid_loss
+from path_visualization import path_formation, animate_paths
 
 def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
     """
@@ -319,6 +317,12 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
 
 
 if __name__ == "__main__":
+    seed = 1121
+    torch.manual_seed(seed)  # Set seed for torch
+    np.random.seed(seed)     # Set seed for numpy
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)  # If using GPU, set the seed for all devices
+
     # arguments
     args = get_args() 
     agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
