@@ -17,7 +17,8 @@ def get_args():
     parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
     parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
     parser.add_argument('--dataset_path', '-dp', type=str, default="sample_data")
-
+    parser.add_argument('--plot_interval', '-pi', type=int, default=10, help='plot interval')
+    
     #MAPF settings
     parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=1000, 
                         help='Max number of agents')

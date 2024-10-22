@@ -31,6 +31,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
         # Set model to training mode
         model.train()  
         train_loss = 0
+        total_agent = 0
         for batch in tqdm(train_loader):
             # Load data onto the correct device (CPU/GPU)
             feature = batch["feature"].to(device)  # shape:[batch_size, channel_num, n, m]
@@ -43,7 +44,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             # Compute loss and apply mask
             loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
             loss = loss * mask.float() # shape:[batch_size, n, m]
-            averaged_loss = loss.mean() # scalar 
+            averaged_loss = loss.sum() / mask.sum() # scalar 
            
             
             # Backward pass and optimization
@@ -56,14 +57,17 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             
             # Train loss for epoch
             train_loss += loss.sum().item()
-        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss}")
-
-        # Evaluate on validation set
-        val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
-        print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
+            total_agent += mask.sum().item()
         
-        # Evaluate path finding
-        sample_agent_path_animation(model, val_loader, a=0, b=0, device=device, steps=100)
+        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss/total_agent}")
+
+        if epoch % args.plot_interval == 0:
+            # Evaluate on validation set
+            val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
+            print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
+            
+            # Evaluate path finding
+            sample_agent_path_animation(model, train_loader, a=0, b=0, device=device, steps=100)
         
 
 def evaluate_valid_loss(model, val_loader, loss_fn, device):
@@ -83,6 +87,7 @@ def evaluate_valid_loss(model, val_loader, loss_fn, device):
     # Set model to evaluation mode
     model.eval()  
     val_loss = 0
+    total_agent = 0
     with torch.no_grad():  # Disable gradient calculation
         for batch in val_loader:
             # Load validation data onto the correct device (CPU/GPU)
@@ -97,8 +102,8 @@ def evaluate_valid_loss(model, val_loader, loss_fn, device):
             loss = loss_fn(logits, action_y)
             loss = loss * mask.float()
             val_loss += loss.sum().item()
-
-    val_loss /= len(val_loader)  
+            total_agent = mask.sum().item()
+    val_loss /= total_agent
     return val_loss
 
 
@@ -157,7 +162,7 @@ def sample_agent_path_animation(model, val_loader, a, b, device, steps=100):
     )
     
     plt.show(block=False)  # 非阻塞显示动画
-    plt.pause(30)  # 暂停 3 秒（根据需要调整时间）
+    plt.pause(20)  # 暂停 2 秒（根据需要调整时间）
     plt.close(fig)  # 自动关闭图形窗口
 
 
@@ -214,7 +219,6 @@ def plot_update(frame, ax, model, agent_num, map_grid, goal_loc, goal_locs_dic, 
     # 如果当前目标距离为0，停止动画
     if current_goal_distance == 0:
         anim.event_source.stop()  # 停止动画
-    
     
     # 更新 agent 的位置
     sample_feature, sample_curr_mask, sample_current_loc, current_loc_tuple = sample_agent_action_update(
@@ -333,7 +337,7 @@ if __name__ == "__main__":
     train_size = int(0.8 * len(data))  # 80% training, 20% validation
     val_size = len(data) - train_size
     train_data, val_data = random_split(data, [train_size, val_size])  
-    
+    # train_data = val_data = data
     # dataloaders
     train_loader = DataLoader(train_data, shuffle=True,  
                               batch_size=args.batch_size,  
