@@ -1,6 +1,7 @@
 sample_data/
 eval_traj/
 runs/
+
 data/
 # Byte-compiled / optimized / DLL files
 __pycache__/
