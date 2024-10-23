@@ -17,6 +17,8 @@ def evaluate_valid_loss(model, val_loader, loss_fn, device):
     # Set model to evaluation mode
     model.eval()  
     val_loss = 0
+    val_num = 0
+
     with torch.no_grad():  # Disable gradient calculation
         for batch in val_loader:
             # Load validation data onto the correct device (CPU/GPU)
@@ -31,6 +33,7 @@ def evaluate_valid_loss(model, val_loader, loss_fn, device):
             loss = loss_fn(logits, action_y)
             loss = loss * mask.float()
             val_loss += loss.sum().item()
+            val_num += mask.sum().item()
+    val_loss /= val_num
 
-    val_loss /= len(val_loader)  
     return val_loss

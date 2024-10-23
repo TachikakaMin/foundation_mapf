@@ -10,13 +10,16 @@ def get_args():
     parser.add_argument('--epochs', '-ep', metavar='E', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch_size', '-bs', dest='batch_size', metavar='B', 
                         type=int, default=512, help='Batch size')
-    parser.add_argument('--learning_rate', '-lr', metavar='LR', type=float, default=1e-5,
+    parser.add_argument('--learning_rate', '-lr', metavar='LR', type=float, default=4e-5,
                         help='Learning rate', dest='lr')
     parser.add_argument('--load', '-l', type=str, default=False, help='Load model from a .pth file')
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
     parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
     parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
     parser.add_argument('--dataset_path', '-dp', type=str, default="data/dataset.npz")
+    parser.add_argument('--plot_interval', type=int, default=10, help='plot interval')
+    parser.add_argument('--save_interval', type=int, default=100, help='save interval')
+    parser.add_argument('--log_dir', type=str, default="runs", help='plot log')
 
     #MAPF settings
     parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=1000, 
