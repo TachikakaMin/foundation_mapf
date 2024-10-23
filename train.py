@@ -70,6 +70,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             args.writer.add_scalar('Loss/Val', val_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
+        if epoch % (3*args.plot_interval) == 0:    
             # sample path visualization
             current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device)
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)

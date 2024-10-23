@@ -10,6 +10,7 @@ import yaml
 from yaml import CLoader, Loader
 import orjson
 from tqdm import tqdm
+import h5py
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 
@@ -27,14 +28,14 @@ class MAPFDataset(Dataset):
         
         if os.path.isdir(data_path):
             # A list containing the paths of all .yaml files.
-            yaml_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith(".yaml")]
+            h5_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith(".h5")][:80]
         else:
-            yaml_files = [self.data_path]
+            h5_files = [self.data_path]
         
-        self.parallel_load_data(yaml_files)
+        self.parallel_load_data(h5_files)
         self.train_data = torch.cat(self.train_data, dim=0)  # 沿第0维进行拼接  #(t, n, m, feature_dim)
         self.action_data = torch.cat(self.action_data, dim=0)
-        self.save("data")
+        # self.save("data")
     
     def save(self, save_path):
         file_name = "dataset.npz"
@@ -50,73 +51,64 @@ class MAPFDataset(Dataset):
         self.action_data = torch.FloatTensor(self.action_data)
         
         
-    def parallel_load_data(self, yaml_files):
+    def parallel_load_data(self, h5_files):
         """
-        Parallelly loads multiple YAML files and processes their training data and action data.
+        Parallelly loads multiple H5 files and processes their training data and action data.
 
         Args:
-        yaml_files (list): A list containing all paths to .yaml files
+        h5_files (list): A list containing all paths to .h5 files
         """
         self.train_data, self.action_data = [], []
-        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-            # Submit tasks to the executor for each yaml file
-            futures = {executor.submit(self.process_yaml_file, yaml_file): yaml_file for yaml_file in yaml_files}
-            
-            for future in tqdm(as_completed(futures), total=len(yaml_files)):
-                # 这里使用 tqdm 库显示进度条，跟踪任务的完成情况
+        with ProcessPoolExecutor(max_workers=2) as executor:
+            futures = {executor.submit(self.process_h5_file, h5_file): h5_file for h5_file in h5_files}
+            for future in tqdm(as_completed(futures), total=len(h5_files)):
                 train_data, action_data = future.result()
-                self.train_data.append(train_data)  # (number of samples, max_time, n, m, feature_dim)
-                self.action_data.append(action_data) # (number of samples, max_time-1, n, m, 5)
-                
-    # Function to process each YAML file
-    def process_yaml_file(self, yaml_file):
-        with open(yaml_file, "rb") as f:
-            raw_data = yaml.load(f, Loader=CLoader)
-        map_name = raw_data['statistics']['map']
-        map_data = self.read_map(map_name)
-        agent_num, agent_locations = self.preprocess_data(raw_data)
-        
-        # (max_time, n, m, feature_dim) (max_time-1, n, m, 5)
-        train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
-        
+                self.train_data.append(train_data)
+                self.action_data.append(action_data)
+
+    def process_h5_file(self, h5_file):
+        with h5py.File(h5_file, "r") as f:
+            # 读取地图名称
+            map_name = f['/statistics'].attrs['map']
+            map_data = self.read_map(map_name)
+            agent_num, agent_locations = self.preprocess_h5_data(f)
+            train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
         return train_data, action_data
+
     
     def read_map(self, map_name):
         map_path = f"map_file/{map_name}"
-        map_data = []                  
+        map_data = []
         with open(map_path, "r") as f:
             data = f.readlines()
             for l in data[4:]:
-                tmp = l[:-1]
-                tmp = tmp.replace(".", "0").replace("@", "1") # 1 for obstacle, 0 for empty space
+                tmp = l.strip()
+                tmp = tmp.replace(".", "0").replace("@", "1")  # 1 表示障碍物，0 表示空白
                 map_data.append(tmp)
         map_data = np.array([list(line) for line in map_data], dtype=int)
         return map_data
     
-    def preprocess_data(self, raw_data):
-        agent_num = len(raw_data["schedule"])
+    def preprocess_h5_data(self, h5_file):
+        agent_names = list(h5_file['/schedule'].keys())
+        agent_num = len(agent_names)
         agent_locations = []
-        # 记录所有agent路径的最大长度
         max_length = 0
-        for i, agent_name in enumerate(raw_data["schedule"]):
-            agent_locs = []
-            agent_path = raw_data["schedule"][agent_name]
-            for loc in agent_path:
-                x, y, t = loc['x'], loc['y'], loc['t']
-                agent_locs.append([x, y, t])
+
+        for agent_name in agent_names:
+            # 读取每个智能体的轨迹数据
+            agent_path = h5_file[f'/schedule/{agent_name}/trajectory'][:]
+            agent_locs = agent_path.tolist()
             max_length = max(max_length, len(agent_locs))
-            agent_locations.append(agent_locs) # 包含每个智能体路径
+            agent_locations.append(agent_locs)
+
+        # 对所有智能体的轨迹进行填充，使其长度相同
         for i in range(agent_num):
-            sublist = agent_locations[i] # 获取第 i 个智能体的路径
+            sublist = agent_locations[i]
             if len(sublist) < max_length:
-                # 用最后一个元素填充
-                # agent_locations[i] += [sublist[-1]] * (max_length - len(sublist))
-                # 获取最后一个位置的 x 和 y 值
                 last_x, last_y, last_t = sublist[-1]
-                # 生成新的填充项，x 和 y 不变，t 从 last_t + 1 开始递增
                 additional_steps = [[last_x, last_y, last_t + j + 1] for j in range(max_length - len(sublist))]
-                # 将这些填充项添加到原来的路径中
                 agent_locations[i] += additional_steps
+
         agent_locations = np.array(agent_locations, dtype=int)
         return agent_num, agent_locations
     
