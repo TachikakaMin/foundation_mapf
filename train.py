@@ -87,12 +87,12 @@ if __name__ == "__main__":
     
     # arguments
     args = get_args() 
-    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S") # get current date and time
     args.real_log_dir = os.path.join(args.log_dir, f"{args.current_time}")
-    args.writer = SummaryWriter(log_dir = args.real_log_dir)
+    args.writer = SummaryWriter(log_dir = args.real_log_dir) # 创建了一个 SummaryWriter 对象，并指定将日志写入到前面定义的 real_log_dir 目录中。
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
-    args.writer.add_text('Args', args_str, 0)
+    args.writer.add_text('Args', args_str, 0)  # 这一行代码将前面生成的参数字符串 args_str 记录到日志文件中。add_text() 方法用于在日志文件中添加文本信息，这里使用 Args 作为标题，并将 args_str 的内容记录在 step=0 的位置。
     
     
     agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))

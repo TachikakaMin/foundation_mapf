@@ -260,6 +260,8 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     
     fps = 5
     FFwriter = animation.FFMpegWriter(fps=fps)
+    
+    # 将生成的动画保存为 MP4 文件。
     save_path = os.path.join(save_path, f"{args.current_time}")
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -271,6 +273,9 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     plt.close(fig)
     
     # Read the saved MP4 file and convert to frames for TensorBoard
+    # 使用 OpenCV 读取保存的 MP4 文件，逐帧读取并转换为 RGB 格式。
+    # 将读取的帧转换为 TensorBoard 兼容的格式 (batch, time, channels, height, width)。
+    # 将视频写入 TensorBoard，用于训练的可视化。
     video = cv2.VideoCapture(save_path)
     frames = []
     success, frame = video.read()
