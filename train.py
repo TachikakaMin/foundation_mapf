@@ -1,5 +1,7 @@
+import os
 import torch
 import torch.nn as nn
+from datetime import datetime
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 from tqdm import tqdm
@@ -8,6 +10,9 @@ from models.unet import UNet
 from data_preprocess.datasetMAPF import MAPFDataset
 from evaluation import evaluate_valid_loss
 from path_visualization import path_formation, animate_paths
+from torch.utils.tensorboard import SummaryWriter
+import matplotlib
+matplotlib.use('Agg')
 
 def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
     """
@@ -24,7 +29,6 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
         device: Device to run the training on (default is 'cuda').
     """
     model.to(device)
-    
     for epoch in range(1, args.epochs + 1):
         # Set model to training mode
         model.train()  
@@ -43,7 +47,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
             loss = loss * mask.float() # shape:[batch_size, n, m]
             averaged_loss = loss.sum() / mask.sum() # scalar 
-           
+            
             
             # Backward pass and optimization
             optimizer.zero_grad()
@@ -56,32 +60,49 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             # Train loss for epoch
             train_loss += loss.sum().item()
             total_agent += mask.sum().item()
-        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss}")
+            
+        args.writer.add_scalar('Loss/Train', train_loss/total_agent, epoch)
+        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss/total_agent}")
+        
         if epoch % args.plot_interval == 0:
             # Evaluate on validation set
             val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
+            args.writer.add_scalar('Loss/Val', val_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
             # sample path visualization
-            # if epoch % 5 == 0:
-            if epoch  == 1:
-                current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device)
-                animate_paths(trajectories, goal_positions, _map, interval=500)
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device)
+            animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
+            args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
+            print(current_goal_distance)
+
+        if epoch % args.save_interval == 0:
+            file_path = os.path.join(args.real_log_dir, f"model_checkpoint_epoch_{epoch}.pth")
+            model.save_model(file_path)
         
     return current_goal_distance
 
 
 if __name__ == "__main__":
-    seed = 1121
-    torch.manual_seed(seed)  # Set seed for torch
-    np.random.seed(seed)     # Set seed for numpy
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)  # If using GPU, set the seed for all devices
-
+    
     # arguments
     args = get_args() 
+    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.real_log_dir = os.path.join(args.log_dir, f"{args.current_time}")
+    args.writer = SummaryWriter(log_dir = args.real_log_dir)
+    args_dict = vars(args)  # 将 args 转换为字典
+    args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
+    args.writer.add_text('Args', args_str, 0)
+    
+    
     agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
     feature_channels = agent_idx_dim * 2 + 1
+    
+    torch.manual_seed(args.seed)  # Set seed for torch
+    np.random.seed(args.seed)     # Set seed for numpy
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)  # If using GPU, set the seed for all devices
+
     
     # model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

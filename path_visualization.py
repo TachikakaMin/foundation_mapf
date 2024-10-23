@@ -1,22 +1,28 @@
+import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.animation import FuncAnimation
 import itertools
+import cv2
 
 def sample_agent_information(val_loader, a, b):
     """
     第 a 个 batch 中第 b 个样本的智能体信息。
 
     """
-    # 得到第 a 个 batch
-    val_loader_iter = iter(val_loader)
-    val_batch = next(itertools.islice(val_loader_iter, a, None))
+    # # 得到第 a 个 batch
+    # val_loader_iter = iter(val_loader)
+    # val_batch = next(itertools.islice(val_loader_iter, a, None))
+    
+    batch_size = val_loader.batch_size
+    start_idx = a * batch_size + b
+    val_batch = val_loader.dataset[start_idx]
     
     # 提取 batch 中第 b 个 sample 的信息
-    val_sample_feature = val_batch["feature"][b]  # shape:[channel_len, n, m]
-    val_sample_curr_mask = val_batch["mask"][b]  # shape:[n, m]
+    val_sample_feature = val_batch["feature"]  # shape:[channel_len, n, m]
+    val_sample_curr_mask = val_batch["mask"]  # shape:[n, m]
     val_sample_agent_num = torch.sum(val_sample_curr_mask == 1)
     
     val_sample_map = val_sample_feature[0, :, :]  # shape:[n, m]
@@ -170,76 +176,75 @@ def path_formation(model, val_loader, a, b, device):
         goal_positions[i] = (goal_x, goal_y)
     
     return current_goal_distance, _map, trajectories, goal_positions
-        
+ 
+def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.animation import FuncAnimation
+    from matplotlib.colors import ListedColormap, BoundaryNorm
 
-def animate_paths(trajectories, goal_positions, _map, interval=500, save_path="eval_traj/animation.gif"):
-    """
-    Function to create and save an animation of agents' movement towards their goal locations without trajectory lines.
-    
-    Args:
-    - trajectories: List of lists of tuples representing agent movements over time.
-    - goal_positions: List of tuples representing the final goal positions of agents.
-    - _map: The grid map where the agents move.
-    - interval: Time interval between frames in milliseconds.
-    - save_path: Path to save the animation file (e.g., "animation.mp4" or "animation.gif").
-    """
     # Map dimensions
     n, m = _map.shape
-    fig, ax = plt.subplots()
 
-    # Set up the map visualization
+    # Set up the figure with larger size (e.g., 10x10 inches)
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Set up the map visualization (this part doesn't change across frames, so it's outside update)
     cmap = ListedColormap(['white', 'grey'])  # White for free space, grey for obstacles
     norm = BoundaryNorm([0, 0.5, 1], cmap.N)
     ax.imshow(_map, cmap=cmap, norm=norm)
-    
-    # Add gridlines with black color
-    ax.set_xticks(np.arange(0, m, 1))
-    ax.set_yticks(np.arange(0, n, 1))
-    ax.grid(which="minor", color="black", linestyle='-', linewidth=1)
-    
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid(which='minor', color='black', linestyle='-', linewidth=1)
+
     # Plot goal positions and add index labels for goals
     for i, goal in enumerate(goal_positions):
-        ax.plot(goal[1], goal[0], 'bo')  # dots represent the goals
-        ax.text(goal[1], goal[0], f'{i}', color='black', fontsize=5, ha='center', va='center')  # Add goal index
+        ax.plot(goal[1], goal[0], 'bo', markersize=10)  # Static goal markers
+        ax.text(goal[1], goal[0], f'{i}', color='black', fontsize=5, ha='center', va='center')
 
-    # Initialize agent markers for each agent at their starting positions
-    agent_plots = [ax.plot([], [], 'go')[0] for _ in range(len(trajectories))]  # dots for agents
-    # Initialize text labels for each agent (for agent indexes on agents)
-    agent_texts = [ax.text(0, 0, '', color="black", fontsize=5, ha='center', va='center') for _ in range(len(trajectories))]
+    # Initialize agent markers for each agent
+    agent_plots = [ax.plot([], [], 'go', markersize=10)[0] for _ in range(len(trajectories))]
+    agent_arrows = [ax.annotate("", xy=(0, 0), xytext=(0, 0), arrowprops=dict(arrowstyle="->", color='red')) for _ in range(len(trajectories))]
 
-    # Define the initialization function
     def init():
-        for agent_plot, agent_text in zip(agent_plots, agent_texts):
-            agent_plot.set_data([], [])  # Initialize agent positions
-            agent_text.set_position((-10, -10))  # Initialize text labels offscreen
-        return agent_plots + agent_texts
-    
-    # Define the update function for animation
+        for agent_plot, agent_arrow in zip(agent_plots, agent_arrows):
+            agent_plot.set_data([], [])
+            agent_arrow.set_position((-10, -10))  # Hide offscreen initially
+        return agent_plots + agent_arrows
+
     def update(frame):
         for i, trajectory in enumerate(trajectories):
             if frame < len(trajectory):
-                # Update agent position
-                agent_plots[i].set_data(trajectory[frame][1], trajectory[frame][0])  # Set agent position (x, y)
+                position = trajectory[frame]
+            else:
+                position = trajectory[-1]  # Stay at the last position
+            agent_plots[i].set_data([position[1]], [position[0]])  # Update agent position
+            goal = goal_positions[i]
+            agent_arrows[i].set_position((position[1], position[0]))  # Update arrow's start point
+            agent_arrows[i].xy = (goal[1], goal[0])  # Arrow end point (goal)
+        return agent_plots + agent_arrows
 
-                # Update text label (agent index number)
-                agent_texts[i].set_position((trajectory[frame][1], trajectory[frame][0]))  # Set text near agent
-                agent_texts[i].set_text(f'{i}')  # Display agent index
-        
+    max_frames = max(len(traj) for traj in trajectories)
+    ani = FuncAnimation(fig, update, frames=max_frames, init_func=init, blit=True, interval=interval)
 
-        return agent_plots + agent_texts
+    # Capture frames into list without saving video
+    frames = []
+    for frame_num in range(max_frames):
+        update(frame_num)  # Only call update without fig.canvas.draw()
+        fig.canvas.draw_idle()  # Use draw_idle to reduce overhead
+        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        frames.append(img)
 
-    # Remove axis labels
-    ax.set_xticks([])
-    ax.set_yticks([])
+    plt.close(fig)  # Close the figure after capturing frames
 
-    # Hide minor ticks (remove small stick out of the edge)
-    ax.tick_params(which='both', bottom=False, left=False, right=False, top=False)
+    # Convert frames to (N, C, H, W) for TensorBoard
+    frames = np.array(frames)
+    frames = np.transpose(frames, (0, 3, 1, 2))  # Convert to (N, C, H, W)
 
-    # Create the animation
-    ani = FuncAnimation(fig, update, frames=len(trajectories[0]), init_func=init, blit=True, interval=interval)
+    # Convert to Tensor and add batch dimension (1, N, C, H, W)
+    frames_tensor = torch.tensor(frames, dtype=torch.uint8).unsqueeze(0)
 
-    # Save the animation
-    ani.save(save_path, writer='imagemagick', fps=500)  # Use 'imagemagick' for GIF or 'ffmpeg' for MP4
-
-    # Close the figure after saving
-    plt.close(fig)
+    # Log the video to TensorBoard
+    fps = 5
+    args.writer.add_video('animation', frames_tensor, global_step=epoch, fps=fps)
