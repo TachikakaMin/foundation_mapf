@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 import matplotlib
 matplotlib.use('Agg')
 
-def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
+def train(args, model, train_loader, val_loader, optimizer, loss_fn, device, action_choice):
     """
     Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
     Also evaluates on validation set after each epoch.
@@ -71,7 +71,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
             # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device)
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice)
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
             args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
             print(current_goal_distance)
@@ -127,4 +127,4 @@ if __name__ == "__main__":
                               num_workers=0)
     
     # train
-    train(args, net, train_loader, val_loader, optimizer, loss_fn, device)
+    train(args, net, train_loader, val_loader, optimizer, loss_fn, device, action_choice="sample")
