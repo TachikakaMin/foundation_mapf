@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 import matplotlib
 matplotlib.use('Agg')
 
-def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
+def train(args, model, train_loader, val_loader, optimizer, loss_fn, device, action_choice):
     """
     Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
     Also evaluates on validation set after each epoch.
@@ -71,7 +71,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
             # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device)
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice)
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
             args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
             print(current_goal_distance)
@@ -87,12 +87,12 @@ if __name__ == "__main__":
     
     # arguments
     args = get_args() 
-    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S") # get current date and time
     args.real_log_dir = os.path.join(args.log_dir, f"{args.current_time}")
-    args.writer = SummaryWriter(log_dir = args.real_log_dir)
+    args.writer = SummaryWriter(log_dir = args.real_log_dir) # 创建了一个 SummaryWriter 对象，并指定将日志写入到前面定义的 real_log_dir 目录中。
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
-    args.writer.add_text('Args', args_str, 0)
+    args.writer.add_text('Args', args_str, 0)  # 这一行代码将前面生成的参数字符串 args_str 记录到日志文件中。add_text() 方法用于在日志文件中添加文本信息，这里使用 Args 作为标题，并将 args_str 的内容记录在 step=0 的位置。
     
     
     agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
@@ -127,4 +127,4 @@ if __name__ == "__main__":
                               num_workers=0)
     
     # train
-    train(args, net, train_loader, val_loader, optimizer, loss_fn, device)
+    train(args, net, train_loader, val_loader, optimizer, loss_fn, device, action_choice="sample")
