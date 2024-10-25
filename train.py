@@ -34,42 +34,44 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device, act
         model.train()  
         train_loss = 0
         total_agent = 0
-        for batch in tqdm(train_loader):
-            # Load data onto the correct device (CPU/GPU)
-            feature = batch["feature"].to(device)  # shape:[batch_size, channel_num, n, m]
-            action_y = batch["action"].to(device)  # shape:[batch_size, n, m]
-            mask = batch["mask"].to(device)  # shape:[batch_size, n, m]
+        for train_loader in train_loaders:
+            for batch in tqdm(train_loader):
+                # Load data onto the correct device (CPU/GPU)
+                feature = batch["feature"].to(device)  # shape:[batch_size, channel_num, n, m]
+                action_y = batch["action"].to(device)  # shape:[batch_size, n, m]
+                mask = batch["mask"].to(device)  # shape:[batch_size, n, m]
 
-            # Forward pass
-            logit, _ = model(feature)  # shape:[batch_size, action_dim, n, m]
-            
-            # Compute loss and apply mask
-            loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
-            loss = loss * mask.float() # shape:[batch_size, n, m]
-            averaged_loss = loss.sum() / mask.sum() # scalar 
-            
-            
-            # Backward pass and optimization
-            optimizer.zero_grad()
-            averaged_loss.backward()
+                # Forward pass
+                logit, _ = model(feature)  # shape:[batch_size, action_dim, n, m]
+                
+                # Compute loss and apply mask
+                loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
+                loss = loss * mask.float() # shape:[batch_size, n, m]
+                averaged_loss = loss.sum() / mask.sum() # scalar 
+                
+                
+                # Backward pass and optimization
+                optimizer.zero_grad()
+                averaged_loss.backward()
 
-            # Gradient clipping to prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-            optimizer.step()
-            
-            # Train loss for epoch
-            train_loss += loss.sum().item()
-            total_agent += mask.sum().item()
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                optimizer.step()
+                
+                # Train loss for epoch
+                train_loss += loss.sum().item()
+                total_agent += mask.sum().item()
             
         args.writer.add_scalar('Loss/Train', train_loss/total_agent, epoch)
         print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss/total_agent}")
         
         if epoch % args.plot_interval == 0:
             # Evaluate on validation set
-            val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
+            val_loss = evaluate_valid_loss(model, val_loaders, loss_fn, device)
             args.writer.add_scalar('Loss/Val', val_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
+        if epoch % (5*args.plot_interval) == 0:    
             # sample path visualization
             current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice)
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
@@ -92,7 +94,10 @@ if __name__ == "__main__":
     args.writer = SummaryWriter(log_dir = args.real_log_dir) # 创建了一个 SummaryWriter 对象，并指定将日志写入到前面定义的 real_log_dir 目录中。
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
-    args.writer.add_text('Args', args_str, 0)  # 这一行代码将前面生成的参数字符串 args_str 记录到日志文件中。add_text() 方法用于在日志文件中添加文本信息，这里使用 Args 作为标题，并将 args_str 的内容记录在 step=0 的位置。
+
+    args.map_strings = ["maze", "empty", "random"] #, "room"] #, "Boston"]
+    # map_strings = ["Boston"]
+    args.writer.add_text('Args', args_str, 0)
     
     
     agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
@@ -112,19 +117,26 @@ if __name__ == "__main__":
     loss_fn = nn.CrossEntropyLoss(reduction="none")  
 
     # dataset 
-    data = MAPFDataset(args.dataset_path, agent_idx_dim)  
-    # Split dataset into train and validation sets
-    train_size = int(0.8 * len(data))  # 80% training, 20% validation
-    val_size = len(data) - train_size
-    train_data, val_data = random_split(data, [train_size, val_size])  
-    # train_data = val_data = data
-    # dataloaders
-    train_loader = DataLoader(train_data, shuffle=True,  
-                              batch_size=args.batch_size,  
-                              num_workers=0)
-    val_loader = DataLoader(val_data, shuffle=False,  
-                              batch_size=args.batch_size, 
-                              num_workers=0)
     
+    train_loaders = []
+    val_loaders = []
+    for map_string in args.map_strings:
+        data = MAPFDataset(args.dataset_path, agent_idx_dim, map_string)  
+        # Split dataset into train and validation sets
+        train_size = int(0.8 * len(data))  # 80% training, 20% validation
+        print(train_size)
+        val_size = len(data) - train_size
+        train_data, val_data = random_split(data, [train_size, val_size])  
+        # train_data = val_data = data
+        # dataloaders
+        train_loader = DataLoader(train_data, shuffle=True,  
+                                batch_size=args.batch_size,  
+                                num_workers=0)
+        val_loader = DataLoader(val_data, shuffle=False,  
+                                batch_size=args.batch_size, 
+                                num_workers=0)
+        
+        train_loaders.append(train_loader)
+        val_loaders.append(val_loader)
     # train
     train(args, net, train_loader, val_loader, optimizer, loss_fn, device, action_choice="sample")

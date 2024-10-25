@@ -10,118 +10,101 @@ import yaml
 from yaml import CLoader, Loader
 import orjson
 from tqdm import tqdm
+import h5py
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 
 class MAPFDataset(Dataset):
-    def __init__(self, data_path, agent_dim):
+    def __init__(self, data_path, agent_dim, map_string):
         self.agent_dim = agent_dim
         self.data_path = data_path
         
-        # .npz are preprocessed data. 
-        # just load and convert them into pytorch tensors.
-        if ".npz" in self.data_path:
-            self.load(self.data_path)
-            print("npz")
-            return
-        
         if os.path.isdir(data_path):
             # A list containing the paths of all .yaml files.
-            yaml_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith(".yaml")]
+            h5_files = [os.path.join(data_path, f) for f in os.listdir(data_path) \
+                if f.endswith(".h5") and map_string in f][:20]
         else:
-            yaml_files = [self.data_path]
+            h5_files = [self.data_path]
         
-        self.parallel_load_data(yaml_files)
-        self.train_data = torch.cat(self.train_data, dim=0)  # 沿第0维进行拼接  #(t, n, m, feature_dim)
-        self.action_data = torch.cat(self.action_data, dim=0)
-        self.save("data")
-    
-    def save(self, save_path):
-        file_name = "dataset.npz"
-        file_path = os.path.join(save_path, file_name)
-        np.savez(file_path, train_data=self.train_data.cpu().numpy(), action_data=self.action_data.cpu().numpy())
-        print("Saved dataset: ", file_path)
+        self.train_data_len = []
+        self.train_data_map_name = []
+        self.train_data_agent_locations = []
+        self.all_map_data = {}
+        self.parallel_load_data(h5_files)
         
-    def load(self, save_path):
-        data = np.load(save_path)
-        self.train_data = torch.from_numpy(data['train_data'])
-        self.train_data = torch.FloatTensor(self.train_data)
-        self.action_data = torch.from_numpy(data['action_data'])
-        self.action_data = torch.FloatTensor(self.action_data)
+        self.train_data_len = np.array(self.train_data_len, dtype=int)
+        self.train_cumsum_len = np.cumsum(self.train_data_len)
         
-        
-    def parallel_load_data(self, yaml_files):
+    def parallel_load_data(self, h5_files):
         """
-        Parallelly loads multiple YAML files and processes their training data and action data.
+        Parallelly loads multiple H5 files and processes their training data and action data.
 
         Args:
-        yaml_files (list): A list containing all paths to .yaml files
+        h5_files (list): A list containing all paths to .h5 files
         """
         self.train_data, self.action_data = [], []
-        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-            # Submit tasks to the executor for each yaml file
-            futures = {executor.submit(self.process_yaml_file, yaml_file): yaml_file for yaml_file in yaml_files}
-            
-            for future in tqdm(as_completed(futures), total=len(yaml_files)):
-                # 这里使用 tqdm 库显示进度条，跟踪任务的完成情况
-                train_data, action_data = future.result()
-                self.train_data.append(train_data)  # (number of samples, max_time, n, m, feature_dim)
-                self.action_data.append(action_data) # (number of samples, max_time-1, n, m, 5)
-                
-    # Function to process each YAML file
-    def process_yaml_file(self, yaml_file):
-        with open(yaml_file, "rb") as f:
-            raw_data = yaml.load(f, Loader=CLoader)
-        map_name = raw_data['statistics']['map']
-        map_data = self.read_map(map_name)
-        agent_num, agent_locations = self.preprocess_data(raw_data)
-        
-        # (max_time, n, m, feature_dim) (max_time-1, n, m, 5)
-        train_data, action_data = self.generate_train_data(agent_num, agent_locations, map_data)
-        
-        return train_data, action_data
+        with ThreadPoolExecutor(max_workers=64) as executor:
+            futures = {executor.submit(self.process_h5_file, h5_file): h5_file for h5_file in h5_files}
+            for future in tqdm(as_completed(futures), total=len(h5_files)):
+                map_name, agent_locations = future.result()
+                self.train_data_len.append(agent_locations.shape[1]-1)
+                self.train_data_map_name.append(map_name)
+                self.train_data_agent_locations.append(agent_locations)
+
+    def process_h5_file(self, h5_file):
+        with h5py.File(h5_file, "r") as f:
+            # 读取地图名称
+            map_name = f['/statistics'].attrs['map']
+            if not (map_name in self.all_map_data.keys()):
+                self.all_map_data[map_name] = torch.FloatTensor(self.read_map(map_name))
+            agent_locations = self.preprocess_h5_data(f)
+        f.close()
+        return map_name, agent_locations
+
     
     def read_map(self, map_name):
         map_path = f"map_file/{map_name}"
-        map_data = []                  
+        map_data = []
         with open(map_path, "r") as f:
             data = f.readlines()
             for l in data[4:]:
-                tmp = l[:-1]
-                tmp = tmp.replace(".", "0").replace("@", "1") # 1 for obstacle, 0 for empty space
+                tmp = l.strip()
+                tmp = tmp.replace(".", "0").replace("@", "1")  # 1 表示障碍物，0 表示空白
                 map_data.append(tmp)
         map_data = np.array([list(line) for line in map_data], dtype=int)
+        map_data = np.expand_dims(map_data, axis=-1)
         return map_data
     
-    def preprocess_data(self, raw_data):
-        agent_num = len(raw_data["schedule"])
+    def preprocess_h5_data(self, h5_file):
+        agent_names = list(h5_file['/schedule'].keys())
+        agent_num = len(agent_names)
         agent_locations = []
-        # 记录所有agent路径的最大长度
         max_length = 0
-        for i, agent_name in enumerate(raw_data["schedule"]):
-            agent_locs = []
-            agent_path = raw_data["schedule"][agent_name]
-            for loc in agent_path:
-                x, y, t = loc['x'], loc['y'], loc['t']
-                agent_locs.append([x, y, t])
+
+        for agent_name in agent_names:
+            # 读取每个智能体的轨迹数据
+            agent_path = h5_file[f'/schedule/{agent_name}/trajectory'][:]
+            agent_locs = agent_path.tolist()
             max_length = max(max_length, len(agent_locs))
-            agent_locations.append(agent_locs) # 包含每个智能体路径
+            agent_locations.append(agent_locs)
+
+        # 对所有智能体的轨迹进行填充，使其长度相同
         for i in range(agent_num):
-            sublist = agent_locations[i] # 获取第 i 个智能体的路径
+            sublist = agent_locations[i]
             if len(sublist) < max_length:
-                # 用最后一个元素填充
-                # agent_locations[i] += [sublist[-1]] * (max_length - len(sublist))
-                # 获取最后一个位置的 x 和 y 值
                 last_x, last_y, last_t = sublist[-1]
-                # 生成新的填充项，x 和 y 不变，t 从 last_t + 1 开始递增
                 additional_steps = [[last_x, last_y, last_t + j + 1] for j in range(max_length - len(sublist))]
-                # 将这些填充项添加到原来的路径中
                 agent_locations[i] += additional_steps
+
         agent_locations = np.array(agent_locations, dtype=int)
-        return agent_num, agent_locations
+        return agent_locations
     
-    def generate_train_data(self, agent_num, agent_locations, map_data):
+    
+    
+    
+    def generate_train_data(self, agent_locations, map_data):
         size_n, size_m = map_data.shape
+        agent_num = agent_locations.shape[0]
         max_time = agent_locations.shape[1]  # shape of agent_locations: (agent_num, time_step, 3)
         
         map_info = np.expand_dims(map_data, axis=-1) # (n,m,1) # 将 map_data 在最后一个维度上进行扩展，形状从 (n, m) 变为 (n, m, 1)
@@ -140,17 +123,8 @@ class MAPFDataset(Dataset):
         
         train_data = []
         for t in range(max_time):
-            current_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
-            agent_data = agent_locations[:,t,:][:, :2]
-            indices = np.arange(agent_num)
-            binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
-            current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-            current_loc_info = torch.FloatTensor(current_loc_info)
-            
-            feature = [map_info, goal_loc_info, current_loc_info]
-            # 将地图信息（map_info）、目标位置信息（goal_loc_info）和当前智能体的位置信息（current_loc_info）连接起来，构成当前时间步的特征向量。 
-            feature = torch.cat(feature, dim=-1)
-            
+            feature = self.get_feature(size_n, size_m, agent_num, 
+                                       agent_locations, t, map_info, goal_loc_info)
             train_data.append(feature)
         # 列表转换为 PyTorch 张量，形状为 (max_time, n, m, feature_dim)
         train_data = torch.stack(train_data)
@@ -167,9 +141,52 @@ class MAPFDataset(Dataset):
         
         return train_data[:-1], action_data
     
+    
+    def get_feature(self, size_n, size_m, agent_num, agent_locations, idx, map_info, goal_loc_info):
+        current_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
+        agent_data = agent_locations[:,idx,:][:, :2]
+        indices = np.arange(agent_num)
+        binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
+        current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
+        current_loc_info = torch.FloatTensor(current_loc_info)
+        
+        feature = [map_info, goal_loc_info, current_loc_info]
+        # 将地图信息(map_info)、目标位置信息(goal_loc_info)和当前智能体的位置信息(current_loc_info)连接起来，构成当前时间步的特征向量。 
+        feature = torch.cat(feature, dim=-1)
+        return feature
+    
+    def generate_train_data_one(self, agent_locations, map_info, idx):
+        size_n, size_m, _ = map_info.shape
+        agent_num = agent_locations.shape[0]
+        max_time = agent_locations.shape[1]
+        
+        goal_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
+        t = max_time-1
+        # 提取了智能体在最后一个时间步的 (x, y) 位置作为目标位置
+        agent_data = agent_locations[:,t,:][:, :2]
+        indices = np.arange(agent_num)
+        # format() 函数，用于将数字 i+1 转换为一个固定长度的二进制字符串，其中 self.agent_dim 指定二进制字符串的长度。
+        binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int) # shape: (agent_num, agent_dim)
+        # 将每个智能体的目标位置填充气自身二进制编码
+        goal_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
+        goal_loc_info = torch.FloatTensor(goal_loc_info)
+        
+        feature = self.get_feature(size_n, size_m, agent_num, 
+                                       agent_locations, idx, map_info, goal_loc_info)
+        
+        feature2 = self.get_feature(size_n, size_m, agent_num, 
+                                       agent_locations, idx+1, map_info, goal_loc_info)
+        
+        train_data_x = feature[:,:,self.agent_dim+1:] # 当前时间步的每个格子的机器人编号
+        train_data_x_next = feature2[:,:,self.agent_dim+1:]
+        action_info = self.get_action_info(train_data_x, train_data_x_next, agent_num)
+        
+        return feature, action_info
+        
+    
     def get_action_info(self, frame, next_frame, agent_num):
         """
-        通过比较当前帧（frame）和下一帧（next_frame）中的智能体位置，计算每个智能体在某一时间步采取的动作信息
+        通过比较当前帧(frame)和下一帧(next_frame)中的智能体位置，计算每个智能体在某一时间步采取的动作信息
         返回的 action_info 包含智能体在每个时间步所采取的动作信息
         """
         shift_left = torch.zeros_like(frame)
@@ -178,7 +195,7 @@ class MAPFDataset(Dataset):
         shift_down = torch.zeros_like(frame)
         
         # Left shift
-        shift_left[:, :-1, :] = frame[:, 1:, :] # 将 frame 的所有元素向左移动一列（原来的第一列被丢弃，最后一列填充 0）
+        shift_left[:, :-1, :] = frame[:, 1:, :] # 将 frame 的所有元素向左移动一列(原来的第一列被丢弃，最后一列填充 0)
         # Right shift
         shift_right[:, 1:, :] = frame[:, :-1, :]
         # Up shift
@@ -190,12 +207,12 @@ class MAPFDataset(Dataset):
         
         action_info = []
         check_list = [shift_left, shift_right, shift_up, shift_down, not_shift]
-        # 检测下一个时间点的map中的每个位置是否有智能体（智能体位置不为 0）。
+        # 检测下一个时间点的map中的每个位置是否有智能体(智能体位置不为 0)。
         # 如果某个位置有智能体，则掩码为 True，否则为 False。
         mask_next_frame = torch.any(next_frame != 0, dim=-1)
         for i, mx in enumerate(check_list):
             # 之前假设了所有的格子上的智能体都往同一个方向移动一步，变成了map1。
-            # 现在检查这个假设是否成立（即真实的下一个时间点的每个格子的智能体编号是不是和map1一样）
+            # 现在检查这个假设是否成立(即真实的下一个时间点的每个格子的智能体编号是不是和map1一样)
             mask_mx = torch.any(mx != 0, dim=-1)
             # 比较当前移动方向 mx 和 next_frame，检查是否有智能体移动到了 next_frame 中的某个位置；并且确保这些位置确实有智能体并且是有效的动作            
             comparison = torch.all(mx == next_frame, axis=-1) & mask_mx & mask_next_frame
@@ -217,16 +234,10 @@ class MAPFDataset(Dataset):
         # 检查生成的 action_info 中的所有动作信息的总和是否等于智能体数量
         assert(action_info.sum() == agent_num)
         return action_info
-        
-    def save(self, save_path):
-        file_name = "dataset.npz"
-        file_path = os.path.join(save_path, file_name)
-        np.savez(file_path, train_data=self.train_data.cpu().numpy(), action_data=self.action_data.cpu().numpy())
-        
     
         
     def __len__(self):
-        return self.train_data.shape[0]
+        return self.train_cumsum_len[-1]
 
     def __getitem__(self, idx):
         """_summary_
@@ -237,11 +248,22 @@ class MAPFDataset(Dataset):
         Returns:
             _type_: _description_
         """
+        data_index = np.searchsorted(self.train_cumsum_len, idx, side='right')
+        diff = idx
+        if data_index != 0:
+            diff = idx - self.train_cumsum_len[data_index - 1]
+        
+        map_name = self.train_data_map_name[data_index]
+        map_data = self.all_map_data[map_name]
+        agent_locations = self.train_data_agent_locations[data_index]
+        
+        train_data, action_info = self.generate_train_data_one(agent_locations, map_data, diff)
+            
         # 重新排列维度，将 (高度, 宽度, 通道数) 变成 (通道数, 高度, 宽度)
-        train_data = self.train_data[idx].permute((2, 0, 1))
+        train_data = train_data.permute((2, 0, 1))
         # 获取当前帧的 action 信息，形状为 (n, m, 动作维度)
-        action_info = self.action_data[idx]
-        # 如果某个位置上存在任何动作（即该位置有智能体），则返回 True，否则返回 False。
+        action_info = action_info
+        # 如果某个位置上存在任何动作(即该位置有智能体)，则返回 True，否则返回 False。
         mask = action_info.any(-1) # (n, m)
         
         # 创建一个全零张量，用于存储每个位置的动作索引

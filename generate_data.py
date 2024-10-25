@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-def run_ecbs(input_dir, output_dir, weight=1.1, timeout=5):
+def run_ecbs(input_dir, output_dir, weight=1.2, timeout=5):
     # 获取 input_dir 中的所有 .yaml 文件
     yaml_files = [f for f in os.listdir(input_dir) if f.endswith('.yaml')]
     
@@ -30,6 +30,6 @@ def run_ecbs(input_dir, output_dir, weight=1.1, timeout=5):
             print(f"Error running command on {yaml_file}: {e}")
 
 # 示例用法
-input_file_dir = "/home/yimin/research/ITA-CBS2/map_file_ecbs/paper_empty_32_32"
+input_file_dir = "/home/yimin/research/ITA-CBS2/map_file_ecbs/paper_room_64_64_2"
 output_file_dir = "data/"
 run_ecbs(input_file_dir, output_file_dir)
