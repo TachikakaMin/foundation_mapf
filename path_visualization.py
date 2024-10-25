@@ -149,7 +149,7 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
 
 
 
-def path_formation(model, val_loader, a, b, device,action_choice):
+def path_formation(model, val_loader, a, b, device, action_choice="max"):
     current_feature, agent_num, _map, \
         current_mask, current_loc, current_loc_tuple, \
         goal_loc, goal_loc_dict = sample_agent_information(val_loader, a, b)

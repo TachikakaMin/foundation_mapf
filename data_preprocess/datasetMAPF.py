@@ -15,22 +15,17 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 
 
 class MAPFDataset(Dataset):
-    def __init__(self, data_path, agent_dim, map_string):
+    def __init__(self, h5_files, agent_dim):
         self.agent_dim = agent_dim
-        self.data_path = data_path
+        self.h5_files = h5_files
         
-        if os.path.isdir(data_path):
-            # A list containing the paths of all .yaml files.
-            h5_files = [os.path.join(data_path, f) for f in os.listdir(data_path) \
-                if f.endswith(".h5") and map_string in f][:20]
-        else:
-            h5_files = [self.data_path]
+        
         
         self.train_data_len = []
         self.train_data_map_name = []
         self.train_data_agent_locations = []
         self.all_map_data = {}
-        self.parallel_load_data(h5_files)
+        self.parallel_load_data(self.h5_files)
         
         self.train_data_len = np.array(self.train_data_len, dtype=int)
         self.train_cumsum_len = np.cumsum(self.train_data_len)

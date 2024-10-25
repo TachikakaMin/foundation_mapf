@@ -12,9 +12,10 @@ from evaluation import evaluate_valid_loss
 from path_visualization import path_formation, animate_paths
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib
+import random
 matplotlib.use('Agg')
 
-def train(args, model, train_loader, val_loader, optimizer, loss_fn, device, action_choice):
+def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
     """
     Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
     Also evaluates on validation set after each epoch.
@@ -71,9 +72,9 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device, act
             args.writer.add_scalar('Loss/Val', val_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
-        if epoch % (5*args.plot_interval) == 0:    
+        if epoch % (2*args.plot_interval) == 0:    
             # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice)
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice="sample")
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
             args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
             print(current_goal_distance)
@@ -121,22 +122,31 @@ if __name__ == "__main__":
     train_loaders = []
     val_loaders = []
     for map_string in args.map_strings:
-        data = MAPFDataset(args.dataset_path, agent_idx_dim, map_string)  
-        # Split dataset into train and validation sets
-        train_size = int(0.8 * len(data))  # 80% training, 20% validation
-        print(train_size)
-        val_size = len(data) - train_size
-        train_data, val_data = random_split(data, [train_size, val_size])  
+        
+        
+        if os.path.isdir(args.dataset_path):
+            # A list containing the paths of all .yaml files.
+            h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) \
+                if f.endswith(".h5") and map_string in f]
+        else:
+            h5_files = [args.dataset_path]
+        
+        test_list = random.sample(h5_files, int(0.1 * len(h5_files))) # 90% training, 10% validation
+        train_list = [item for item in h5_files if item not in test_list]
+
+        
+        train_data = MAPFDataset(train_list, agent_idx_dim)  
+        test_data = MAPFDataset(test_list, agent_idx_dim)  
         # train_data = val_data = data
         # dataloaders
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
                                 num_workers=0)
-        val_loader = DataLoader(val_data, shuffle=False,  
+        val_loader = DataLoader(test_data, shuffle=False,  
                                 batch_size=args.batch_size, 
                                 num_workers=0)
         
         train_loaders.append(train_loader)
         val_loaders.append(val_loader)
     # train
-    train(args, net, train_loader, val_loader, optimizer, loss_fn, device, action_choice="sample")
+    train(args, net, train_loader, val_loader, optimizer, loss_fn, device)
