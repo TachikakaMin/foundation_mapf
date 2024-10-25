@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 import matplotlib
 matplotlib.use('Agg')
 
-def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
+def train(args, model, train_loader, val_loader, optimizer, loss_fn, device, action_choice):
     """
     Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
     Also evaluates on validation set after each epoch.
@@ -73,7 +73,7 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
             
         if epoch % (5*args.plot_interval) == 0:    
             # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loaders[0], 0, 0, device)
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice)
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
             args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
             print(current_goal_distance)
@@ -89,11 +89,12 @@ if __name__ == "__main__":
     
     # arguments
     args = get_args() 
-    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S") # get current date and time
     args.real_log_dir = os.path.join(args.log_dir, f"{args.current_time}")
-    args.writer = SummaryWriter(log_dir = args.real_log_dir)
+    args.writer = SummaryWriter(log_dir = args.real_log_dir) # 创建了一个 SummaryWriter 对象，并指定将日志写入到前面定义的 real_log_dir 目录中。
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
+
     args.map_strings = ["maze", "empty", "random"] #, "room"] #, "Boston"]
     # map_strings = ["Boston"]
     args.writer.add_text('Args', args_str, 0)
@@ -138,4 +139,4 @@ if __name__ == "__main__":
         train_loaders.append(train_loader)
         val_loaders.append(val_loader)
     # train
-    train(args, net, train_loaders, val_loaders, optimizer, loss_fn, device)
+    train(args, net, train_loader, val_loader, optimizer, loss_fn, device, action_choice="sample")

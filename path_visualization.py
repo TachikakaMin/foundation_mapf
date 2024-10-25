@@ -45,7 +45,7 @@ def sample_agent_information(val_loader, a, b):
     return val_sample_feature, val_sample_agent_num, val_sample_map, val_sample_curr_mask, val_sample_current_loc, agents_current_loc_tuple, val_sample_goal_loc, agents_goal_loc_dict
 
 
-def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, current_loc, current_loc_tuple, goal_loc, device):
+def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, current_loc, current_loc_tuple, goal_loc, device, action_choice="max"):
     model.eval()
     curr_mask = curr_mask.to(device)
     in_feature = feature.unsqueeze(0).to(device) # 增加 batch 维度; shape:[1, channel_len, n, m]
@@ -53,7 +53,14 @@ def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, curre
         _, pred = model(in_feature) # shape:[1, action_dim, n, m]
     
     # 选择概率最高的动作
-    pred = pred.squeeze(0).permute((1, 2, 0)).argmax(-1) # shape:[n, m]
+    if action_choice == "sample":
+        # view(-1, pred.shape[1])：将 n x m 的二维矩阵展平，得到形状 [n*m, action_dim]，为每个 (n, m) 位置创建一个概率分布。
+        # torch.multinomial(..., num_samples=1)：从每个位置的 action_dim 维度中采样一个动作。
+        sampled_actions = torch.multinomial(pred[0].permute(1, 2, 0).contiguous().view(-1, pred.shape[1]), num_samples=1)
+        # 将采样结果还原到 (n, m) 形状
+        pred = sampled_actions.view(pred.shape[2], pred.shape[3])
+    else:
+        pred = pred.squeeze(0).permute((1, 2, 0)).argmax(-1) # shape:[n, m]
     action = pred * curr_mask # shape:[n, m]
     
     # 更新智能体的tuple位置
@@ -142,7 +149,7 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
 
 
 
-def path_formation(model, val_loader, a, b, device):
+def path_formation(model, val_loader, a, b, device,action_choice):
     current_feature, agent_num, _map, \
         current_mask, current_loc, current_loc_tuple, \
         goal_loc, goal_loc_dict = sample_agent_information(val_loader, a, b)
@@ -152,7 +159,7 @@ def path_formation(model, val_loader, a, b, device):
     
     for step in range(100):
         current_feature, current_mask, current_loc, current_loc_tuple = sample_agent_action_update(
-            model, current_feature, agent_num, _map, current_mask, current_loc, current_loc_tuple, goal_loc, device
+            model, current_feature, agent_num, _map, current_mask, current_loc, current_loc_tuple, goal_loc, device, action_choice
         )
         # 记录当前步骤每个智能体的位置
         for i in range(agent_num):
@@ -260,6 +267,8 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     
     fps = 5
     FFwriter = animation.FFMpegWriter(fps=fps)
+    
+    # 将生成的动画保存为 MP4 文件。
     save_path = os.path.join(save_path, f"{args.current_time}")
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -271,6 +280,9 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     plt.close(fig)
     
     # Read the saved MP4 file and convert to frames for TensorBoard
+    # 使用 OpenCV 读取保存的 MP4 文件，逐帧读取并转换为 RGB 格式。
+    # 将读取的帧转换为 TensorBoard 兼容的格式 (batch, time, channels, height, width)。
+    # 将视频写入 TensorBoard，用于训练的可视化。
     video = cv2.VideoCapture(save_path)
     frames = []
     success, frame = video.read()
