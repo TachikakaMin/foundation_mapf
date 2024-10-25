@@ -41,7 +41,9 @@ class MAPFDataset(Dataset):
         with ThreadPoolExecutor(max_workers=64) as executor:
             futures = {executor.submit(self.process_h5_file, h5_file): h5_file for h5_file in h5_files}
             for future in tqdm(as_completed(futures), total=len(h5_files)):
-                map_name, agent_locations = future.result()
+                map_name, agent_locations, h5_file = future.result()
+                if agent_locations.shape[0] == 0:
+                    continue
                 self.train_data_len.append(agent_locations.shape[1]-1)
                 self.train_data_map_name.append(map_name)
                 self.train_data_agent_locations.append(agent_locations)
@@ -54,7 +56,7 @@ class MAPFDataset(Dataset):
                 self.all_map_data[map_name] = torch.FloatTensor(self.read_map(map_name))
             agent_locations = self.preprocess_h5_data(f)
         f.close()
-        return map_name, agent_locations
+        return map_name, agent_locations, h5_file
 
     
     def read_map(self, map_name):
@@ -138,17 +140,26 @@ class MAPFDataset(Dataset):
     
     
     def get_feature(self, size_n, size_m, agent_num, agent_locations, idx, map_info, goal_loc_info):
-        current_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
-        agent_data = agent_locations[:,idx,:][:, :2]
-        indices = np.arange(agent_num)
-        binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int)
-        current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-        current_loc_info = torch.FloatTensor(current_loc_info)
+        current_loc_info = torch.zeros((size_n, size_m, self.agent_dim), dtype=torch.int)
+        agent_data = agent_locations[:, idx, :][:, :2]
+        indices = torch.arange(agent_num)
+
+        # 创建二进制编码的特征
+        binary_strings = torch.tensor(
+            [[int(bit) for bit in format(i + 1, f'0{self.agent_dim}b')] for i in indices],
+            dtype=torch.int
+        )
         
-        feature = [map_info, goal_loc_info, current_loc_info]
+        current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
+        current_loc_info = current_loc_info.float()
+        
+        final_feature = torch.empty((size_n, size_m, map_info.size(-1) + goal_loc_info.size(-1) + self.agent_dim), dtype=torch.float)
+        
+        final_feature[..., :map_info.size(-1)] = map_info
+        final_feature[..., map_info.size(-1):map_info.size(-1) + goal_loc_info.size(-1)] = goal_loc_info
+        final_feature[..., -self.agent_dim:] = current_loc_info
         # 将地图信息(map_info)、目标位置信息(goal_loc_info)和当前智能体的位置信息(current_loc_info)连接起来，构成当前时间步的特征向量。 
-        feature = torch.cat(feature, dim=-1)
-        return feature
+        return final_feature
     
     def generate_train_data_one(self, agent_locations, map_info, idx):
         size_n, size_m, _ = map_info.shape

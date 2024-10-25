@@ -2,6 +2,7 @@ sample_data/
 eval_traj/
 runs/
 
+*.prof
 .vscode/
 data_h5/
 data/

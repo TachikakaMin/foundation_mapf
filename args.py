@@ -10,7 +10,7 @@ def get_args():
     parser.add_argument('--epochs', '-ep', metavar='E', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch_size', '-bs', dest='batch_size', metavar='B', 
                         type=int, default=512, help='Batch size')
-    parser.add_argument('--learning_rate', '-lr', metavar='LR', type=float, default=3e-5,
+    parser.add_argument('--learning_rate', '-lr', metavar='LR', type=float, default=1e-5,
                         help='Learning rate', dest='lr')
     parser.add_argument('--load', '-l', type=str, default=False, help='Load model from a .pth file')
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
@@ -22,7 +22,7 @@ def get_args():
     parser.add_argument('--log_dir', type=str, default="runs", help='plot log')
 
     #MAPF settings
-    parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=1000, 
+    parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=250, 
                         help='Max number of agents')
     parser.add_argument('--action_dim', '-ad', metavar='AD', type=int, default=5, help='Action types')
     return parser.parse_args()

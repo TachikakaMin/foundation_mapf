@@ -56,7 +56,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
                 averaged_loss.backward()
 
                 # Gradient clipping to prevent exploding gradients
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 optimizer.step()
                 
                 # Train loss for epoch
@@ -96,8 +96,8 @@ if __name__ == "__main__":
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
-    args.map_strings = ["maze", "empty", "random"] #, "room"] #, "Boston"]
-    # map_strings = ["Boston"]
+    args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
+    # args.map_strings = ["Boston"]
     args.writer.add_text('Args', args_str, 0)
     
     
