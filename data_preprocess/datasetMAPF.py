@@ -18,9 +18,6 @@ class MAPFDataset(Dataset):
     def __init__(self, h5_files, agent_dim):
         self.agent_dim = agent_dim
         self.h5_files = h5_files
-        
-        
-        
         self.train_data_len = []
         self.train_data_map_name = []
         self.train_data_agent_locations = []
@@ -97,51 +94,9 @@ class MAPFDataset(Dataset):
         return agent_locations
     
     
-    
-    
-    def generate_train_data(self, agent_locations, map_data):
-        size_n, size_m = map_data.shape
-        agent_num = agent_locations.shape[0]
-        max_time = agent_locations.shape[1]  # shape of agent_locations: (agent_num, time_step, 3)
-        
-        map_info = np.expand_dims(map_data, axis=-1) # (n,m,1) # 将 map_data 在最后一个维度上进行扩展，形状从 (n, m) 变为 (n, m, 1)
-        map_info = torch.FloatTensor(map_info)
-        
-        goal_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
-        t = max_time-1
-        # 提取了智能体在最后一个时间步的 (x, y) 位置作为目标位置
-        agent_data = agent_locations[:,t,:][:, :2]
-        indices = np.arange(agent_num)
-        # format() 函数，用于将数字 i+1 转换为一个固定长度的二进制字符串，其中 self.agent_dim 指定二进制字符串的长度。
-        binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int) # shape: (agent_num, agent_dim)
-        # 将每个智能体的目标位置填充气自身二进制编码
-        goal_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
-        goal_loc_info = torch.FloatTensor(goal_loc_info)
-        
-        train_data = []
-        for t in range(max_time):
-            feature = self.get_feature(size_n, size_m, agent_num, 
-                                       agent_locations, t, map_info, goal_loc_info)
-            train_data.append(feature)
-        # 列表转换为 PyTorch 张量，形状为 (max_time, n, m, feature_dim)
-        train_data = torch.stack(train_data)
-        
-        action_data = []
-        for t in range(max_time-1):
-            train_data_x = train_data[t][:,:,self.agent_dim+1:] # 当前时间步的每个格子的机器人编号
-            train_data_x_next = train_data[t+1][:,:,self.agent_dim+1:]
-            action_info = self.get_action_info(train_data_x, train_data_x_next, agent_num)
-            action_data.append(action_info)
-        
-        # shape: (max_time-1, n, m, 5)
-        action_data = torch.stack(action_data)
-        
-        return train_data[:-1], action_data
-    
-    
     def get_feature(self, size_n, size_m, agent_num, agent_locations, idx, map_info, goal_loc_info):
         current_loc_info = torch.zeros((size_n, size_m, self.agent_dim), dtype=torch.int)
-        agent_data = agent_locations[:, idx, :][:, :2]
+        cur_agent_data = agent_locations[:, idx, :][:, :2]
         indices = torch.arange(agent_num)
 
         # 创建二进制编码的特征
@@ -150,31 +105,48 @@ class MAPFDataset(Dataset):
             dtype=torch.int
         )
         
-        current_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
+        current_loc_info[cur_agent_data[:, 0], cur_agent_data[:, 1]] = binary_strings
         current_loc_info = current_loc_info.float()
         
-        final_feature = torch.empty((size_n, size_m, map_info.size(-1) + goal_loc_info.size(-1) + self.agent_dim), dtype=torch.float)
         
-        final_feature[..., :map_info.size(-1)] = map_info
-        final_feature[..., map_info.size(-1):map_info.size(-1) + goal_loc_info.size(-1)] = goal_loc_info
-        final_feature[..., -self.agent_dim:] = current_loc_info
+        
+        goal_vector_info = np.zeros((size_n, size_m, 2), dtype=int)
+        goal_agent_data = agent_locations[:,-1,:][:, :2]
+        
+        # 计算方向向量并按照每个智能体的到目标位置的距离进行归一化
+        vec = goal_agent_data - cur_agent_data  # 当前到目标的方向向量
+        distances = np.linalg.norm(vec, axis=1, keepdims=True)  # 欧氏距离
+        
+        # 为了避免除零，将距离为零的情况设置为 1
+        distances[distances == 0] = 1
+        unit_vec = vec / distances  # 归一化每个向量以生成单位向量
+        
+        # 将单位向量填充到 goal_vector_info 矩阵中对应的智能体当前位置
+        goal_vector_info[cur_agent_data[:, 0], cur_agent_data[:, 1]] = unit_vec
+        goal_vector_info = torch.FloatTensor(goal_vector_info)
+        
+        
+        final_feature = torch.empty((size_n, size_m, map_info.size(-1)+ goal_vector_info.size(-1) + goal_loc_info.size(-1) + self.agent_dim), dtype=torch.float)
+        
+        final_feature[..., :map_info.size(-1)] = map_info # 1
+        final_feature[..., map_info.size(-1):map_info.size(-1)+ goal_vector_info.size(-1)] = goal_vector_info # 1+2
+        final_feature[..., map_info.size(-1)+ goal_vector_info.size(-1):\
+            map_info.size(-1)+ goal_vector_info.size(-1) + goal_loc_info.size(-1)] = goal_loc_info  # 1+2+agent_dim
+        final_feature[..., -self.agent_dim:] = current_loc_info # 1+2+agent_dim+agent_dim
         # 将地图信息(map_info)、目标位置信息(goal_loc_info)和当前智能体的位置信息(current_loc_info)连接起来，构成当前时间步的特征向量。 
         return final_feature
     
     def generate_train_data_one(self, agent_locations, map_info, idx):
         size_n, size_m, _ = map_info.shape
         agent_num = agent_locations.shape[0]
-        max_time = agent_locations.shape[1]
         
         goal_loc_info = np.zeros((size_n, size_m, self.agent_dim), dtype=int)
-        t = max_time-1
-        # 提取了智能体在最后一个时间步的 (x, y) 位置作为目标位置
-        agent_data = agent_locations[:,t,:][:, :2]
-        indices = np.arange(agent_num)
+        goal_agent_data = agent_locations[:,-1,:][:, :2] # 提取了智能体在最后一个时间步的 (x, y) 位置作为目标位置
+        indices = np.arange(agent_num) 
         # format() 函数，用于将数字 i+1 转换为一个固定长度的二进制字符串，其中 self.agent_dim 指定二进制字符串的长度。
         binary_strings = np.array([list(format(i+1, f'0{self.agent_dim}b')) for i in indices], dtype=int) # shape: (agent_num, agent_dim)
         # 将每个智能体的目标位置填充气自身二进制编码
-        goal_loc_info[agent_data[:, 0], agent_data[:, 1]] = binary_strings
+        goal_loc_info[goal_agent_data[:, 0], goal_agent_data[:, 1]] = binary_strings
         goal_loc_info = torch.FloatTensor(goal_loc_info)
         
         feature = self.get_feature(size_n, size_m, agent_num, 
@@ -183,8 +155,8 @@ class MAPFDataset(Dataset):
         feature2 = self.get_feature(size_n, size_m, agent_num, 
                                        agent_locations, idx+1, map_info, goal_loc_info)
         
-        train_data_x = feature[:,:,self.agent_dim+1:] # 当前时间步的每个格子的机器人编号
-        train_data_x_next = feature2[:,:,self.agent_dim+1:]
+        train_data_x = feature[:,:,-self.agent_dim:] # 当前时间步的每个格子的机器人编号
+        train_data_x_next = feature2[:,:,-self.agent_dim:]
         action_info = self.get_action_info(train_data_x, train_data_x_next, agent_num)
         
         return feature, action_info

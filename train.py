@@ -74,7 +74,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             
         if epoch % (2*args.plot_interval) == 0:    
             # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(model, val_loader, 0, 0, device, action_choice="sample")
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loader, 0, 0, device, action_choice="sample")
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
             args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
             print(current_goal_distance)
@@ -97,12 +97,12 @@ if __name__ == "__main__":
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
     args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
-    # args.map_strings = ["Boston"]
+    # args.map_strings = ["maze"]
     args.writer.add_text('Args', args_str, 0)
     
     
-    agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    feature_channels = agent_idx_dim * 2 + 1
+    args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
+    feature_channels = args.agent_idx_dim * 2 + 1 + 2
     
     torch.manual_seed(args.seed)  # Set seed for torch
     np.random.seed(args.seed)     # Set seed for numpy
@@ -113,10 +113,21 @@ if __name__ == "__main__":
     # model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net = UNet(n_channels=feature_channels, n_classes=args.action_dim, bilinear=False)
+    
+    # 计算可训练参数的总数
+    total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+
+    # 计算模型的内存需求
+    # 假设每个参数为32位浮点数（4字节）
+    model_memory = total_params * 4 / (1024 ** 2)  # 转换为MB
+
+    print(f"参数总数：{total_params}")
+    print(f"模型大小约为：{model_memory:.2f} MB")
+    
     optimizer = torch.optim.RMSprop(net.parameters(),
                               lr=args.lr, weight_decay=1e-8, momentum=0.999, foreach=True)
     loss_fn = nn.CrossEntropyLoss(reduction="none")  
-
+    
     # dataset 
     
     train_loaders = []
@@ -135,10 +146,8 @@ if __name__ == "__main__":
         train_list = [item for item in h5_files if item not in test_list]
 
         
-        train_data = MAPFDataset(train_list, agent_idx_dim)  
-        test_data = MAPFDataset(test_list, agent_idx_dim)  
-        # train_data = val_data = data
-        # dataloaders
+        train_data = MAPFDataset(train_list, args.agent_idx_dim)  
+        test_data = MAPFDataset(test_list, args.agent_idx_dim)  
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
                                 num_workers=0)
