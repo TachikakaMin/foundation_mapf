@@ -74,7 +74,7 @@ def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
             
         if epoch % (2*args.plot_interval) == 0:    
             # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loader, 0, 0, device, action_choice="sample")
+            current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loader, 0, 0, device, action_choice="max")
             animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
             args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
             print(current_goal_distance)
@@ -96,8 +96,8 @@ if __name__ == "__main__":
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
-    args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
-    # args.map_strings = ["maze"]
+    # args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
+    args.map_strings = ["empty"]
     args.writer.add_text('Args', args_str, 0)
     
     
@@ -121,11 +121,15 @@ if __name__ == "__main__":
     # 假设每个参数为32位浮点数（4字节）
     model_memory = total_params * 4 / (1024 ** 2)  # 转换为MB
 
-    print(f"参数总数：{total_params}")
-    print(f"模型大小约为：{model_memory:.2f} MB")
+    print(f"参数总数 (parameter)：{total_params}")
+    print(f"模型大小约为 (model size)：{model_memory:.2f} MB")
     
-    optimizer = torch.optim.RMSprop(net.parameters(),
-                              lr=args.lr, weight_decay=1e-8, momentum=0.999, foreach=True)
+    optimizer = torch.optim.Adam(
+                    net.parameters(),
+                    lr=args.lr,
+                    betas=(0.9, 0.999),  # 默认值，适合大多数情况
+                    weight_decay=1e-8
+                )
     loss_fn = nn.CrossEntropyLoss(reduction="none")  
     
     # dataset 
@@ -150,10 +154,10 @@ if __name__ == "__main__":
         test_data = MAPFDataset(test_list, args.agent_idx_dim)  
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
-                                num_workers=0)
+                                num_workers=8)
         val_loader = DataLoader(test_data, shuffle=False,  
                                 batch_size=args.batch_size, 
-                                num_workers=0)
+                                num_workers=4)
         
         train_loaders.append(train_loader)
         val_loaders.append(val_loader)

@@ -6,7 +6,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='UNet training')
     
     # training
-    parser.add_argument('--seed', '-sd', metavar='S', type=int, default=114514, help='seed')
+    parser.add_argument('--seed', '-sd', metavar='S', type=int, default=1919180, help='seed')
     parser.add_argument('--epochs', '-ep', metavar='E', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch_size', '-bs', dest='batch_size', metavar='B', 
                         type=int, default=512, help='Batch size')
