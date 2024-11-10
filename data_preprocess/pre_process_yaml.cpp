@@ -106,9 +106,11 @@ int main(int argc, char* argv[]) {
             std::string h5FilePath = outputFolder + "/" + entry.path().stem().string() + ".h5";  // 根据 YAML 文件名生成 HDF5 文件名
 
             if (fs::exists(h5FilePath)) {
+                std::cout<< entry.path().stem().string()<<std::endl;
                 continue;  // 跳过已经存在的文件
             }
-
+            
+            // if (entry.path().stem().string() != "random-32-32-10_agents_156_test_175") continue;
             // 处理每个 YAML 文件并生成 HDF5 文件
             std::cout << "Processing: " << yamlFilePath << " -> " << h5FilePath << std::endl;
             processYAMLtoHDF5(yamlFilePath, h5FilePath);

@@ -37,6 +37,6 @@ def run_ecbs(input_dir, output_dir, weight=1.2, timeout=5, max_workers=32):
             executor.submit(run_single_ecbs, yaml_file, input_dir, output_dir, weight, timeout)
 
 # 示例用法
-input_file_dir = "/home/yimin/research/ITA-CBS2/map_file_ecbs/paper_empty_32_32_for_foundation/"
+input_file_dir = "/home/yimin/research/ITA-CBS2/map_file_ecbs/paper_empty_32_32_for_foundation"
 output_file_dir = "single_map_data_empty/"
 run_ecbs(input_file_dir, output_file_dir, weight=1.2, timeout=5, max_workers=4)

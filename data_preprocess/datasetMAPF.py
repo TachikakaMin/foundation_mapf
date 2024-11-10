@@ -35,15 +35,21 @@ class MAPFDataset(Dataset):
         h5_files (list): A list containing all paths to .h5 files
         """
         self.train_data, self.action_data = [], []
-        with ThreadPoolExecutor(max_workers=64) as executor:
+        with ThreadPoolExecutor(max_workers=128) as executor:
             futures = {executor.submit(self.process_h5_file, h5_file): h5_file for h5_file in h5_files}
             for future in tqdm(as_completed(futures), total=len(h5_files)):
-                map_name, agent_locations, h5_file = future.result()
-                if agent_locations.shape[0] == 0:
-                    continue
-                self.train_data_len.append(agent_locations.shape[1]-1)
-                self.train_data_map_name.append(map_name)
-                self.train_data_agent_locations.append(agent_locations)
+                try:
+                    map_name, agent_locations, h5_file = future.result()
+                    if agent_locations.shape[0] == 0:
+                        continue
+                    self.train_data_len.append(agent_locations.shape[1] - 1)
+                    self.train_data_map_name.append(map_name)
+                    self.train_data_agent_locations.append(agent_locations)
+                except Exception as e:
+                    # 如果文件不合法或有错误，则删除该文件
+                    invalid_file = futures[future]
+                    print(f"Invalid file detected and removed: {invalid_file}")
+                    os.remove(invalid_file)
 
     def process_h5_file(self, h5_file):
         with h5py.File(h5_file, "r") as f:
@@ -235,8 +241,10 @@ class MAPFDataset(Dataset):
         map_data = self.all_map_data[map_name]
         agent_locations = self.train_data_agent_locations[data_index]
         
-        train_data, action_info = self.generate_train_data_one(agent_locations, map_data, diff)
-            
+        try:
+            train_data, action_info = self.generate_train_data_one(agent_locations, map_data, diff)
+        except Exception as e:
+            print(e, map_name, data_index, diff)
         # 重新排列维度，将 (高度, 宽度, 通道数) 变成 (通道数, 高度, 宽度)
         train_data = train_data.permute((2, 0, 1))
         # 获取当前帧的 action 信息，形状为 (n, m, 动作维度)
