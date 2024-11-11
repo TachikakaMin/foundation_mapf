@@ -97,7 +97,7 @@ if __name__ == "__main__":
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
     # args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
-    args.map_strings = ["empty", "random"]
+    args.map_strings = [ "random", "empty"]
     args.writer.add_text('Args', args_str, 0)
     
     
@@ -145,7 +145,6 @@ if __name__ == "__main__":
                 if f.endswith(".h5") and map_string in f]
         else:
             h5_files = [args.dataset_path]
-        
         test_list = random.sample(h5_files, int(0.1 * len(h5_files))) # 90% training, 10% validation
         train_list = [item for item in h5_files if item not in test_list]
 
@@ -154,10 +153,10 @@ if __name__ == "__main__":
         test_data = MAPFDataset(test_list, args.agent_idx_dim)  
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
-                                num_workers=8)
+                                num_workers=16)
         val_loader = DataLoader(test_data, shuffle=False,  
                                 batch_size=args.batch_size, 
-                                num_workers=4)
+                                num_workers=16)
         
         train_loaders.append(train_loader)
         val_loaders.append(val_loader)

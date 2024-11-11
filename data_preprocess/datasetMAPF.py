@@ -110,7 +110,6 @@ class MAPFDataset(Dataset):
             [[int(bit) for bit in format(i + 1, f'0{self.agent_dim}b')] for i in indices],
             dtype=torch.int
         )
-        
         current_loc_info[cur_agent_data[:, 0], cur_agent_data[:, 1]] = binary_strings
         current_loc_info = current_loc_info.float()
         
@@ -245,6 +244,7 @@ class MAPFDataset(Dataset):
             train_data, action_info = self.generate_train_data_one(agent_locations, map_data, diff)
         except Exception as e:
             print(e, map_name, data_index, diff)
+            raise e
         # 重新排列维度，将 (高度, 宽度, 通道数) 变成 (通道数, 高度, 宽度)
         train_data = train_data.permute((2, 0, 1))
         # 获取当前帧的 action 信息，形状为 (n, m, 动作维度)

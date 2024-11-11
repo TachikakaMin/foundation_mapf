@@ -3,10 +3,68 @@
 #include "H5Cpp.h"
 #include <vector>
 #include <string>
-#include <filesystem> // C++17 文件系统库
+#include <filesystem>
+#include <future>
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using namespace H5;
 namespace fs = std::filesystem;
+
+class ThreadPool {
+public:
+    ThreadPool(size_t numThreads) : stop(false) {
+        for (size_t i = 0; i < numThreads; ++i) {
+            workers.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(this->queueMutex);
+                        this->condition.wait(lock, [this] { return this->stop || !this->tasks.empty(); });
+                        if (this->stop && this->tasks.empty()) return;
+                        task = std::move(this->tasks.front());
+                        this->tasks.pop();
+                    }
+                    task();
+                }
+            });
+        }
+    }
+
+    template<class F>
+    auto enqueue(F&& f) -> std::future<typename std::result_of<F()>::type> {
+        using returnType = typename std::result_of<F()>::type;
+        auto task = std::make_shared<std::packaged_task<returnType()>>(std::forward<F>(f));
+        std::future<returnType> res = task->get_future();
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            if (stop) throw std::runtime_error("enqueue on stopped ThreadPool");
+            tasks.emplace([task]() { (*task)(); });
+        }
+        condition.notify_one();
+        return res;
+    }
+
+    ~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+        condition.notify_all();
+        for (std::thread &worker : workers) worker.join();
+    }
+
+private:
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    std::mutex queueMutex;
+    std::condition_variable condition;
+    bool stop;
+};
 
 void processYAMLtoHDF5(const std::string& yamlFilePath, const std::string& h5FilePath) {
     // 加载 YAML 文件
@@ -84,38 +142,65 @@ void processYAMLtoHDF5(const std::string& yamlFilePath, const std::string& h5Fil
 
     file.close();
 }
-int main(int argc, char* argv[]) {
-    // 检查命令行参数
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <yaml_folder> <output_folder>" << std::endl;
-        return 1;
-    }
-
-    std::string yamlFolder = argv[1];  // 第一个参数是 YAML 文件夹路径
-    std::string outputFolder = argv[2];  // 第二个参数是 HDF5 输出文件夹路径
-
-    // 检查输出文件夹是否存在，如果不存在则创建
+void processFilesConcurrently(const std::string& yamlFolder, const std::string& outputFolder, int maxProcesses) {
     if (!fs::exists(outputFolder)) {
         fs::create_directory(outputFolder);
     }
+
+    std::vector<pid_t> pids;
+    int activeProcesses = 0;
 
     // 遍历 YAML 文件夹
     for (const auto& entry : fs::directory_iterator(yamlFolder)) {
         if (entry.is_regular_file() && entry.path().extension() == ".yaml") {
             std::string yamlFilePath = entry.path().string();
-            std::string h5FilePath = outputFolder + "/" + entry.path().stem().string() + ".h5";  // 根据 YAML 文件名生成 HDF5 文件名
+            std::string h5FilePath = outputFolder + "/" + entry.path().stem().string() + ".h5";
 
             if (fs::exists(h5FilePath)) {
-                std::cout<< entry.path().stem().string()<<std::endl;
-                continue;  // 跳过已经存在的文件
+                std::cout << "Skipping existing file: " << entry.path().stem().string() << std::endl;
+                continue;
             }
-            
-            // if (entry.path().stem().string() != "random-32-32-10_agents_156_test_175") continue;
-            // 处理每个 YAML 文件并生成 HDF5 文件
             std::cout << "Processing: " << yamlFilePath << " -> " << h5FilePath << std::endl;
-            processYAMLtoHDF5(yamlFilePath, h5FilePath);
+            // 创建子进程处理每个文件
+            if (activeProcesses >= maxProcesses) {
+                int status;
+                wait(&status);  // 等待一个子进程结束
+                activeProcesses--;
+            }
+
+            pid_t pid = fork();
+            if (pid == 0) {
+                // 子进程
+                processYAMLtoHDF5(yamlFilePath, h5FilePath);
+                exit(0);  // 子进程退出
+            } else if (pid > 0) {
+                // 父进程
+                pids.push_back(pid);
+                activeProcesses++;
+            } else {
+                std::cerr << "Fork failed for file: " << yamlFilePath << std::endl;
+            }
         }
     }
+
+    // 等待所有子进程结束
+    for (pid_t pid : pids) {
+        int status;
+        waitpid(pid, &status, 0);
+    }
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 4) {
+        std::cerr << "Usage: " << argv[0] << " <yaml_folder> <output_folder> <max_processes>" << std::endl;
+        return 1;
+    }
+
+    std::string yamlFolder = argv[1];
+    std::string outputFolder = argv[2];
+    int maxProcesses = std::stoi(argv[3]);
+
+    processFilesConcurrently(yamlFolder, outputFolder, maxProcesses);
 
     return 0;
 }
