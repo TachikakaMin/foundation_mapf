@@ -7,7 +7,7 @@ from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
 
-def sample_agent_information(val_loader, a, b):
+def sample_agent_information(args, val_loader, a, b):
     """
     第 a 个 batch 中第 b 个样本的智能体信息。
 
@@ -26,10 +26,8 @@ def sample_agent_information(val_loader, a, b):
     val_sample_agent_num = torch.sum(val_sample_curr_mask == 1)
     
     val_sample_map = val_sample_feature[0, :, :]  # shape:[n, m]
-    channel_len = val_sample_feature.shape[0]
-    agent_idx_len = (channel_len - 1) // 2  
-    val_sample_current_loc = val_sample_feature[-agent_idx_len:, :, :] # shape:[agent_idx_len, n, m]
-    val_sample_goal_loc = val_sample_feature[1:agent_idx_len+1, :, :] # shape:[agent_idx_len, n, m]
+    val_sample_current_loc = val_sample_feature[-args.agent_idx_dim:, :, :] # shape:[agent_idx_len, n, m]
+    val_sample_goal_loc = val_sample_feature[-args.agent_idx_dim*2:-args.agent_idx_dim, :, :] # shape:[agent_idx_len, n, m]
     
     agents_current_loc_tuple = torch.nonzero(val_sample_curr_mask, as_tuple=False) # shape:[agent_num, 2]
     val_sample_goal_mask = val_sample_goal_loc.any(0) # shape:[n, m]
@@ -42,11 +40,16 @@ def sample_agent_information(val_loader, a, b):
         value = agents_goal_loc_tuple[i]
         agents_goal_loc_dict[key] = value
     
-    return val_sample_feature, val_sample_agent_num, val_sample_map, val_sample_curr_mask, val_sample_current_loc, agents_current_loc_tuple, val_sample_goal_loc, agents_goal_loc_dict
+    return val_sample_feature, val_sample_agent_num, val_sample_map, \
+        val_sample_curr_mask, val_sample_current_loc, agents_current_loc_tuple, \
+            val_sample_goal_loc, agents_goal_loc_dict, agents_goal_loc_tuple
 
 
-def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, current_loc, current_loc_tuple, goal_loc, device, action_choice="max"):
+def sample_agent_action_update(model, feature, agent_num, _map, \
+                            curr_mask, current_loc, current_loc_tuple, \
+                                goal_loc, goal_loc_tuple, device, action_choice="max"):
     model.eval()
+    size_n, size_m = curr_mask.shape
     curr_mask = curr_mask.to(device)
     in_feature = feature.unsqueeze(0).to(device) # 增加 batch 维度; shape:[1, channel_len, n, m]
     with torch.no_grad():
@@ -67,6 +70,20 @@ def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, curre
     fix_current_loc_tuple = 1 * current_loc_tuple
     current_loc_tuple = move_agent(agent_num, current_loc_tuple, action, _map)
     
+    goal_vector_info = np.zeros((size_n, size_m, 2), dtype=int)
+    # 计算方向向量并按照每个智能体的到目标位置的距离进行归一化
+    vec = goal_loc_tuple - current_loc_tuple  # 当前到目标的方向向量
+    distances = np.linalg.norm(vec, axis=1, keepdims=True)  # 欧氏距离
+    
+    # 为了避免除零，将距离为零的情况设置为 1
+    distances[distances == 0] = 1
+    unit_vec = vec / distances  # 归一化每个向量以生成单位向量
+    
+    # 将单位向量填充到 goal_vector_info 矩阵中对应的智能体当前位置
+    goal_vector_info[current_loc_tuple[:, 0], current_loc_tuple[:, 1]] = unit_vec
+    goal_vector_info = torch.FloatTensor(goal_vector_info).reshape(-1, size_n, size_m)
+    
+    
     # 更新智能体的位置（用于模型输入）
     fix_current_loc = 1 * current_loc
     current_loc = torch.zeros_like(current_loc)
@@ -78,8 +95,8 @@ def sample_agent_action_update(model, feature, agent_num, _map, curr_mask, curre
         agent_index = fix_current_loc[:, pre_x, pre_y]
         current_loc[:, current_x, current_y] = agent_index
     
-    map_with_batch = _map.unsqueeze(0)  # 增加 batch 维度; shape:[1, n, m]
-    feature = torch.cat([map_with_batch, goal_loc, current_loc], dim=0)
+    map_with_batch = _map.unsqueeze(0)  #shape:[1, n, m]
+    feature = torch.cat([map_with_batch, goal_vector_info, goal_loc, current_loc], dim=0)
     curr_mask = current_loc.any(0)
 
     return feature, curr_mask, current_loc, current_loc_tuple
@@ -149,22 +166,24 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
 
 
 
-def path_formation(model, val_loader, a, b, device,action_choice):
+def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     current_feature, agent_num, _map, \
         current_mask, current_loc, current_loc_tuple, \
-        goal_loc, goal_loc_dict = sample_agent_information(val_loader, a, b)
+        goal_loc, goal_loc_dict, goal_loc_tuple = sample_agent_information(args, val_loader, a, b)
     
     # 用于存储每个智能体在每个步骤的位置，添加初始位置
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
     
     for step in range(100):
         current_feature, current_mask, current_loc, current_loc_tuple = sample_agent_action_update(
-            model, current_feature, agent_num, _map, current_mask, current_loc, current_loc_tuple, goal_loc, device, action_choice
+            model, current_feature, agent_num, _map, \
+                current_mask, current_loc, current_loc_tuple, \
+                    goal_loc, goal_loc_tuple, device, action_choice
         )
         # 记录当前步骤每个智能体的位置
         for i in range(agent_num):
             trajectories[i].append(tuple(current_loc_tuple[i].tolist()))
-
+    
         current_goal_distance = calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dict)
         if current_goal_distance == 0:
             break

@@ -1,7 +1,9 @@
 sample_data/
 eval_traj/
 runs/
-
+*.zip
+*.prof
+single_map_data_empty/
 .vscode/
 data_h5/
 data/
