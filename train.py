@@ -121,14 +121,14 @@ if __name__ == "__main__":
     # 假设每个参数为32位浮点数（4字节）
     model_memory = total_params * 4 / (1024 ** 2)  # 转换为MB
 
-    print(f"参数总数 (parameter)：{total_params}")
-    print(f"模型大小约为 (model size)：{model_memory:.2f} MB")
+    print(f"参数总数 (parameter): {total_params}")
+    print(f"模型大小约为 (model size): {model_memory:.2f} MB")
     
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
                     net.parameters(),
                     lr=args.lr,
                     betas=(0.9, 0.999),  # 默认值，适合大多数情况
-                    weight_decay=1e-8
+                    weight_decay=args.weight_decay
                 )
     loss_fn = nn.CrossEntropyLoss(reduction="none")  
     
