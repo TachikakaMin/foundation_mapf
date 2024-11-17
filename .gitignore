@@ -172,3 +172,8 @@ cython_debug/
 .DS_Store
 
 *maps.yaml
+Makefile
+*.a
+cmake_install.cmake
+CMakeFiles/
+CMakeCache.txt
