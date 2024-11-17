@@ -1,4 +1,3 @@
-from pogema_toolbox.eval_utils import save_evaluation_results
 from pogema_toolbox.evaluator import evaluation
 from pogema_toolbox.registry import ToolboxRegistry
 from pogema_toolbox.create_env import Environment
@@ -34,7 +33,6 @@ def main():
         eval_dir = folder
         print(f"Running evaluation for {eval_dir}")
         evaluation(evaluation_config, eval_dir=eval_dir)
-        save_evaluation_results(eval_dir)
 
 
 if __name__ == '__main__':
