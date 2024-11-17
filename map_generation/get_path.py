@@ -19,11 +19,11 @@ def main():
     ]
 
     for folder in folder_names:
-        maps_path = folder + "/maps.yaml"
+        maps_path = folder + "/test_random_map.yaml"
         print(f"Loading maps from {maps_path}")
         with open(maps_path, 'r') as f:
             maps = yaml.safe_load(f)
-        ToolboxRegistry.register_maps(maps['seed-000'])
+        ToolboxRegistry.register_maps(maps)
         
         config_path = folder + "/config.yaml"
         print(f"Loading config from {config_path}")
