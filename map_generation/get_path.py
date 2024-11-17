@@ -15,8 +15,6 @@ def main():
 
     folder_names = [
         'random_maps',
-        'maze_maps',
-        'warehouse_maps',
     ]
 
     for folder in folder_names:
