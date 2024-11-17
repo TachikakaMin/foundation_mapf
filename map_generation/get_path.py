@@ -20,13 +20,13 @@ def main():
     ]
 
     for folder in folder_names:
-        maps_path = folder / "maps.yaml"
+        maps_path = folder + "/maps.yaml"
         print(f"Loading maps from {maps_path}")
         with open(maps_path, 'r') as f:
             maps = yaml.safe_load(f)
         ToolboxRegistry.register_maps(maps)
         
-        config_path = folder / "config.yaml"
+        config_path = folder + "/config.yaml"
         print(f"Loading config from {config_path}")
         with open(config_path) as f:
             evaluation_config = yaml.safe_load(f)
