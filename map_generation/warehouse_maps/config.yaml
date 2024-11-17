@@ -1,0 +1,26 @@
+environment:
+  name: Environment
+  with_animation: False
+  on_target: 'nothing'
+  max_episode_steps: 128
+  observation_type: 'MAPF'
+  collision_system: 'soft'
+  #obs_radius: 4
+  seed: 0
+  num_agents:
+    grid_search: [ 8, 16, 24, 32, 48, 64 ]
+  map_name:
+    grid_search: [
+        random_maps-seed-000
+    ]
+
+algorithms:
+  LaCAM:
+    name: LaCAM
+
+
+results_views:
+  TabularView1:
+    type: tabular
+    drop_keys: [ seed, map_name ]
+    print_results: True
