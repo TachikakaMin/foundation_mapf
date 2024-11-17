@@ -23,7 +23,7 @@ def main():
         print(f"Loading maps from {maps_path}")
         with open(maps_path, 'r') as f:
             maps = yaml.safe_load(f)
-        ToolboxRegistry.register_maps(maps)
+        ToolboxRegistry.register_maps(maps['seed-000'])
         
         config_path = folder + "/config.yaml"
         print(f"Loading config from {config_path}")
