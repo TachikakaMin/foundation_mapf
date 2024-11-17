@@ -151,4 +151,4 @@ if __name__ == "__main__":
     maps_dict_to_yaml(f'maze_maps/test_maze_map.yaml', map)
 
     # batch generate 128 maps
-    generate_and_save_maps("maze_maps/maze_maps", 128)
+    generate_and_save_maps("maze_maps/maps", 128)
