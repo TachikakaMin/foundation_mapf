@@ -6,6 +6,8 @@ from pogema_toolbox.algorithm_config import AlgoBase
 
 from pogema import GridConfig
 
+import yaml
+
 import os
 import subprocess
 if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'liblacam.so')):
@@ -15,6 +17,15 @@ if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), '
     make_cmd = ['make', '-j8']
     subprocess.run(make_cmd, check=True, cwd=calling_script_dir)
     
+
+def convert_paths(agent_paths):
+    formatted_data = {}
+    for i, agent_path in enumerate(agent_paths):
+        formatted_data[f'agent{i}'] = [
+            {'x': coord[0], 'y': coord[1], 't': t} 
+            for t, coord in enumerate(agent_path)
+        ]
+    return formatted_data
     
 class LacamLib:
     def __init__(self, lib_path):
@@ -202,6 +213,11 @@ class LacamInference:
                 agent_paths = [[agent_starts_xy[i] for _ in range(256)] for i in range(len(agent_starts_xy))] # if failed - agents just wait in start locations
             print(f"agent number: {len(self.lacam_agents)}")
             print(f"agent paths: {agent_paths}")
+            formatted_data = convert_paths(agent_paths)
+
+            # Save to a YAML file
+            with open('agent_paths.yaml', 'w') as file:
+                yaml.dump(formatted_data, file, default_flow_style=False)
             if agent_paths is not None:
                 for idx, agent_path in enumerate(agent_paths):
                     self.lacam_agents[idx].set_path(agent_path)
