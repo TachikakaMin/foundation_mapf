@@ -90,4 +90,4 @@ if __name__ == '__main__':
     import os
     os.makedirs('warehouse_maps', exist_ok=True)
 
-    maps_dict_to_yaml(f'warehouse_maps/maps.yaml', {'warehouse': generate_wfi_warehouse(WarehouseConfig())})
+    maps_dict_to_yaml(f'warehouse_maps/maps.yaml', {'map_0': generate_wfi_warehouse(WarehouseConfig())})
