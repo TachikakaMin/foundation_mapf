@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     # single generate
     map = {"map_0": MazeGenerator.generate_maze(**MazeRangeSettings().manual_sample(10, 20, 0.2, 3, 0.8, 0))}
-    maps_dict_to_yaml(f'maze_maps/test_maze_map.yaml', map)
+    maps_dict_to_yaml(f'maze_maps/test_map.yaml', map)
 
     # batch generate 128 maps
     generate_and_save_maps("maze_maps/maps", 128)

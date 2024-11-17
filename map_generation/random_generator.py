@@ -73,7 +73,7 @@ if __name__ == "__main__":
     os.makedirs("random_maps", exist_ok=True)
     # single generate
     map = {"map_0": generate_map(MapRangeSettings().manual_sample(10, 20, 0.2, 0))}
-    maps_dict_to_yaml(f'random_maps/test_random_map.yaml', map)
+    maps_dict_to_yaml(f'random_maps/test_map.yaml', map)
 
     # batch generate 128 maps
     generate_and_save_maps("random_maps/maps", 128)

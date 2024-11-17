@@ -19,7 +19,7 @@ def main():
     ]
 
     for folder in folder_names:
-        maps_path = folder + "/test_random_map.yaml"
+        maps_path = folder + "/test_map.yaml"
         print(f"Loading maps from {maps_path}")
         with open(maps_path, 'r') as f:
             maps = yaml.safe_load(f)
