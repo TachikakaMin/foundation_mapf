@@ -21,5 +21,5 @@ if __name__ == '__main__':
                 print(f"Running map {map_name} with {agent_number} agents")
                 config = GridConfig(map=map_value, num_agents=agent_number)
                 env = pogema_v0(config)
-                env._initialize_grid()
+                env.reset()
                 print(env.grid.obstacles)
