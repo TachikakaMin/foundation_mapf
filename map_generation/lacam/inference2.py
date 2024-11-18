@@ -93,8 +93,6 @@ class LacamInference:
         
 
     def solve(self, observations):
-        print(len(observations))
-        print(observations[0])
         map_array = np.array(observations[0]['global_obstacles'])
         agent_starts_xy = [obs['global_xy'] for obs in observations]
         agent_targets_xy = [obs['global_target_xy'] for obs in observations]

@@ -29,14 +29,14 @@ if __name__ == '__main__':
             maps = yaml.safe_load(f)
         for map_name, map_value in maps.items():
             for agent_number in agent_numbers:
-                print(f"Running map {map_name} with {agent_number} agents")
-                config = GridConfig(map=map_value, num_agents=agent_number, observation_type="MAPF")
-                env = pogema_v0(config)
-                obs, _ = env.reset()
-                result = lacam.solve(obs)
-                print(result)
-                formatted_data = convert_paths(result)
-                # Save to a YAML file
-                with open(f'{folder}/map_{map_name}_agent_{agent_number}.yaml', 'w') as file:
-                    yaml.dump(formatted_data, file, default_flow_style=False)
+                for seed in range(128):
+                    print(f"Running map {map_name} with {agent_number} agents and seed {seed}")
+                    config = GridConfig(map=map_value, num_agents=agent_number, observation_type="MAPF", seed=seed)
+                    env = pogema_v0(config)
+                    obs, _ = env.reset()
+                    result = lacam.solve(obs)
+                    formatted_data = convert_paths(result)
+                    # Save to a YAML file
+                    with open(f'{folder}/map_{map_name}_agent_{agent_number}_seed_{seed}.yaml', 'w') as file:
+                        yaml.dump(formatted_data, file, default_flow_style=False)
                 
