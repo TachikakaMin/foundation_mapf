@@ -11,7 +11,7 @@ environment:
     grid_search: [ 8, 16, 24, 32, 48, 64 ]
   map_name:
     grid_search: [
-        map_0
+        seed-000, seed-001, seed-002
     ]
 
 algorithms:
