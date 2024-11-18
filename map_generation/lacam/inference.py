@@ -106,6 +106,7 @@ class LacamInference:
         if solved:
             agent_paths = _parse_data(lacam_results)
         else:
-            print(f"Lacam failed to find path for {len(self.lacam_agents)} agents")
-            agent_paths = [[agent_starts_xy[i] for _ in range(256)] for i in range(agent_number)] # if failed - agents just wait in start locations
+            print(f"Lacam failed to find path for {agent_number} agents")
+            # agent_paths = [[agent_starts_xy[i] for _ in range(256)] for i in range(agent_number)] # if failed - agents just wait in start locations
+            agent_paths = None
         return agent_paths
