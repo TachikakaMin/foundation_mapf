@@ -75,8 +75,6 @@ const char* run_lacam(const char* map_content_cstr,
 
   // post processing
   print_stats(verbose, &deadline, ins, solution, comp_time_ms);
-  make_log(ins, solution, "lacam_log.txt", comp_time_ms, "tmp_map", seed,
-           log_short);
 
   auto get_x = [&](int k) { return k % ins.G->width; };
   auto get_y = [&](int k) { return k / ins.G->width; };
