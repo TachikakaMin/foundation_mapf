@@ -216,7 +216,7 @@ class LacamInference:
             formatted_data = convert_paths(agent_paths)
 
             # Save to a YAML file
-            with open('agent_paths.yaml', 'w') as file:
+            with open(f'agent_path_{len(self.lacam_agents)}.yaml', 'w') as file:
                 yaml.dump(formatted_data, file, default_flow_style=False)
             if agent_paths is not None:
                 for idx, agent_path in enumerate(agent_paths):
