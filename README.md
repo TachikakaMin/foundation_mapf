@@ -7,3 +7,11 @@
     # the next feature_dim features represents the goal position of a specific agent
     # the next feature_dim features represents the start position of a specific agent
     feature_channels = args.agent_dim * 2 + 1
+
+## Map and Path Generation
+
+first modify params in map_generation/gen_map_and_path.sh, then
+```bash
+cd map_generation
+bash gen_map_and_path.sh
+```
