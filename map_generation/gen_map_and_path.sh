@@ -7,4 +7,4 @@ python3 random_generator.py --number_of_maps 5
 python3 maze_generator.py --number_of_maps 5
 
 # Invoke get_path.py
-python3 get_path.py --seed_range 5 --agent_numbers [8,16,32,64]
+python3 get_path.py --seed_range 5 --agent_numbers 8 16 32 64
