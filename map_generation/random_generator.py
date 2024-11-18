@@ -76,5 +76,5 @@ if __name__ == "__main__":
     maps_dict_to_yaml(f'random_maps/test_map.yaml', map)
 
     # batch generate 128 maps
-    generate_and_save_maps("random_maps/maps", 128)
+    generate_and_save_maps("random_maps/maps", 10)
 
