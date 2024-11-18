@@ -30,7 +30,7 @@ if __name__ == '__main__':
         for map_name, map_value in maps.items():
             for agent_number in agent_numbers:
                 print(f"Running map {map_name} with {agent_number} agents")
-                config = GridConfig(map=map_value, num_agents=agent_number)
+                config = GridConfig(map=map_value, num_agents=agent_number, observation_type="MAPF")
                 env = pogema_v0(config)
                 obs, _ = env.reset()
                 result = lacam.solve(obs)
