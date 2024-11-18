@@ -22,4 +22,5 @@ if __name__ == '__main__':
                 config = GridConfig(map=map_value, num_agents=agent_number)
                 env = pogema_v0(config)
                 env.reset()
-                print(env.grid.obstacles)
+                print(len(env.grid.obstacles))
+                print()
