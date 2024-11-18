@@ -37,7 +37,7 @@ if __name__ == '__main__':
     seed_range = 10
     agent_numbers = [ 8, 16, 24, 32, 48, 64 ]
     folder_names = [
-        'random_maps'
+        'random_maps',
         'maze_maps',
     ]
     lacam = LacamInference()
