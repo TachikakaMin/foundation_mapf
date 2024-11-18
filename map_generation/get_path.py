@@ -14,19 +14,19 @@ def convert_paths(agent_paths):
     return formatted_data
 
 def grid_to_str(grid):
-    grid = [['.' if cell == grid.config.FREE else '#' for cell in row] for row in grid.obstacles]
+    str = [['.' if cell == grid.config.FREE else '#' for cell in row] for row in grid.obstacles]
 
     # Mark agents with 'A' on the grid
     for agent_pos in grid.positions_xy:
         x, y = agent_pos
-        grid[x][y] = 'A'
+        str[x][y] = 'A'
 
     # Mark targets with 'T' on the grid
     for target_pos in grid.finishes_xy:
         x, y = target_pos
         # Avoid overwriting an agent position with a target symbol
-        if grid[x][y] != 'A':
-            grid[x][y] = 'T'
+        if str[x][y] != 'A':
+            str[x][y] = 'T'
 
     # Convert the grid to a string
     return '\n'.join(''.join(row) for row in grid)
