@@ -9,11 +9,11 @@ def maps_dict_to_yaml(filename, maps):
         yaml.dump(maps, file)
 
 class MazeRangeSettings:
-    width_min: int = 5
-    width_max: int = 9
+    width_min: int = 17
+    width_max: int = 21
 
-    height_min: int = 5
-    height_max: int = 9
+    height_min: int = 17
+    height_max: int = 21
 
     obstacle_density_min: float = 0.0
     obstacle_density_max: float = 1.0
