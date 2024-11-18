@@ -16,7 +16,7 @@ def convert_paths(agent_paths):
 
 if __name__ == '__main__':
 
-    agent_numbers = [ 8, 16, 24, 32, 48, 64 ]
+    agent_numbers = [ 8 ]
     folder_names = [
         'maze_maps',
     ]
