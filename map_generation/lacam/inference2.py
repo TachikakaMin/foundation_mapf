@@ -113,7 +113,7 @@ class LacamInference:
         map_row = lambda row: ''.join('@' if x else '.' for x in row)
         map_content = '\n'.join(map_row(row) for row in map_array)
         map_file_content = f"type octile\nheight {map_array.shape[0]}\nwidth {map_array.shape[1]}\nmap\n{map_content}"
-        solved, lacam_results = self.lacam_lib.run_lacam(map_file_content, task_file_content, len(self.lacam_agents), self.timeouts)
+        solved, lacam_results = self.lacam_lib.run_lacam(map_file_content, task_file_content, agent_number, self.timeouts)
         if solved:
             agent_paths = _parse_data(lacam_results)
         else:
