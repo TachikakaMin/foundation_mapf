@@ -32,7 +32,7 @@ if __name__ == '__main__':
                 print(f"Running map {map_name} with {agent_number} agents")
                 config = GridConfig(map=map_value, num_agents=agent_number)
                 env = pogema_v0(config)
-                obs = env.reset()
+                obs, _ = env.reset()
                 result = lacam.solve(obs)
                 print(result)
                 formatted_data = convert_paths(result)
