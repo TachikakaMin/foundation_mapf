@@ -137,7 +137,7 @@ def generate_and_save_maps(name_prefix, number_of_maps):
     for seed in seed_range:
         settings = MazeRangeSettings().sample(seed)
         maze = MazeGenerator.generate_maze(**settings)
-        map_name = f"seed-{str(seed).zfill(max_digits)}"
+        map_name = f"{str(seed).zfill(max_digits)}"
         maps[map_name] = maze
     maps_dict_to_yaml(f'{name_prefix}.yaml', maps)
 
