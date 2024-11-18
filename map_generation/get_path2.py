@@ -29,7 +29,7 @@ if __name__ == '__main__':
             maps = yaml.safe_load(f)
         for map_name, map_value in maps.items():
             for agent_number in agent_numbers:
-                for seed in range(128):
+                for seed in range(1):
                     print(f"Running map {map_name} with {agent_number} agents and seed {seed}")
                     config = GridConfig(map=map_value, num_agents=agent_number, observation_type="MAPF", seed=seed)
                     env = pogema_v0(config)
