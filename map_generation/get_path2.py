@@ -16,12 +16,10 @@ if __name__ == '__main__':
         print(f"Loading maps from {maps_path}")
         with open(maps_path, 'r') as f:
             maps = yaml.safe_load(f)
-        print(maps)
-        for map in maps:
-            print(f"Running map {map}")
+        for map_name, map_value in maps.items():
             for agent_number in agent_numbers:
-                print(f"Running map {map} with {agent_number} agents")
-                config = GridConfig(map, agent_number)
+                print(f"Running map {map_name} with {agent_number} agents")
+                config = GridConfig(map={map_name}, num_agents=agent_number)
                 env = pogema_v0(config)
                 env._initialize_grid()
                 print(env.grid.obstacles)
