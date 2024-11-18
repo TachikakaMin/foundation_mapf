@@ -2,7 +2,7 @@ from pogema import GridConfig, pogema_v0
 
 import yaml
 
-from foundation_mapf.map_generation.lacam.inference2 import LacamInference
+from lacam.inference2 import LacamInference
 
 def convert_paths(agent_paths):
     formatted_data = {}
