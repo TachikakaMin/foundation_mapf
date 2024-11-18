@@ -1,8 +1,8 @@
 from pogema import GridConfig, pogema_v0
+from lacam.inference import LacamInference
 
 import yaml
-
-from lacam.inference import LacamInference
+import argparse
 
 def convert_paths(agent_paths):
     formatted_data = {}
@@ -34,8 +34,13 @@ def grid_to_str(grid):
 
 if __name__ == '__main__':
 
-    seed_range = 5
-    agent_numbers = [ 8, 16, 32, 64 ]
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed_range', type=int, default=10, help='Number of seeds to generate start and target positions')
+    parser.add_argument('--agent_numbers', type=int, nargs='+', default=[2, 3, 4, 5])
+    args = parser.parse_args()
+
+    seed_range = args.seed_range
+    agent_numbers = args.agent_numbers
     folder_names = [
         'random_maps',
         'maze_maps',

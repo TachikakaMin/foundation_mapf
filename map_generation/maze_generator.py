@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 
 def maps_dict_to_yaml(filename, maps):
     import yaml
@@ -146,9 +147,13 @@ if __name__ == "__main__":
     import os
     os.makedirs("maze_maps", exist_ok=True)
 
-    # single generate
+    # single generate test
     map = {"map_0": MazeGenerator.generate_maze(**MazeRangeSettings().manual_sample(10, 20, 0.2, 3, 0.8, 0))}
     maps_dict_to_yaml(f'maze_maps/test_map.yaml', map)
 
+    parser = argparse.ArgumentParser(description='Generate maze maps')
+    parser.add_argument('--number_of_maps', type=int, default=5, help='Number of maps to generate')
+    args = parser.parse_args()
+
     # batch generate 5 maps
-    generate_and_save_maps("maze_maps/maps", 5)
+    generate_and_save_maps("maze_maps/maps", args.number_of_maps)

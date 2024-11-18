@@ -1,5 +1,5 @@
 import numpy as np
-
+import argparse
 
 def maps_dict_to_yaml(filename, maps):
     import yaml
@@ -71,10 +71,14 @@ def generate_and_save_maps(name_prefix, number_of_maps):
 if __name__ == "__main__":
     import os
     os.makedirs("random_maps", exist_ok=True)
-    # single generate
+    # single generate test
     map = {"map_0": generate_map(MapRangeSettings().manual_sample(10, 20, 0.2, 0))}
     maps_dict_to_yaml(f'random_maps/test_map.yaml', map)
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--number_of_maps", type=int, default=5)
+    args = parser.parse_args()
+
     # batch generate 5 maps
-    generate_and_save_maps("random_maps/maps", 5)
+    generate_and_save_maps("random_maps/maps", args.number_of_maps)
 
