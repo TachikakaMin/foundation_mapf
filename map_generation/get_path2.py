@@ -34,6 +34,8 @@ if __name__ == '__main__':
                     config = GridConfig(map=map_value, num_agents=agent_number, observation_type="MAPF", seed=seed)
                     env = pogema_v0(config)
                     obs, _ = env.reset()
+                    print(f"Observation shape: {obs.shape}")
+                    print(f"Observation: {obs}")
                     result = lacam.solve(obs)
                     formatted_data = convert_paths(result)
                     # Save to a YAML file
