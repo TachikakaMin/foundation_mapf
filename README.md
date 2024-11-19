@@ -12,8 +12,7 @@
 
 first modify params in map_generation/gen_map_and_path.sh, then
 ```bash
-cd map_generation
-bash gen_map_and_path.sh
+bash map_generation/gen_map_and_path.sh
 ```
 
 ## Installation
