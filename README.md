@@ -12,11 +12,10 @@
 
 first modify params in map_generation/gen_map_and_path.sh, then
 ```bash
-cd map_generation
-bash gen_map_and_path.sh
+bash map_generation/gen_map_and_path.sh
 ```
 
 ## Installation
 ```bash
-pip install torch torchvision numpy pandas scikit-image matplotlib pyyaml orjson h5py opencv-python tensorboard
+pip install torch torchvision numpy pandas scikit-image matplotlib pyyaml orjson h5py opencv-python tensorboard pogema tqdm
 ```

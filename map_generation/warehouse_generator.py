@@ -1,11 +1,6 @@
 import numpy as np
+import os
 
-def maps_dict_to_yaml(filename, maps):
-    import yaml
-    with open(filename, 'w') as file:
-        yaml.add_representer(str,
-                             lambda dumper, data: dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|'))
-        yaml.dump(maps, file)
 
 class WarehouseConfig:
     wall_width: int = 5
@@ -30,7 +25,7 @@ def generate_warehouse(cfg: WarehouseConfig):
             col_start = cfg.bottom_gap + col * (cfg.wall_width + cfg.horizontal_gap)
             grid[row_start:row_start + cfg.wall_height, col_start:col_start + cfg.wall_width] = 1
 
-    return '\n'.join(''.join('!' if cell == 0 else '#' for cell in row) for row in grid)
+    return '\n'.join(''.join('!' if cell == 0 else '@' for cell in row) for row in grid)
 
 
 def generate_wfi_positions(grid_str, bottom_gap, vertical_gap):
@@ -57,13 +52,13 @@ def generate_wfi_positions(grid_str, bottom_gap, vertical_gap):
     if vertical_gap == 2:
         for row in range(1, height):
             for col in range(width):
-                if grid[row][col] == '!' and grid[row - 1][col] == '#':
+                if grid[row][col] == '!' and grid[row - 1][col] == '@':
                     goal_locations.append((row, col))
     else:
         for row in range(height):
             for col in range(width):
                 if grid[row][col] == '!':
-                    if (row > 0 and grid[row - 1][col] == '#') or (row < height - 1 and grid[row + 1][col] == '#'):
+                    if (row > 0 and grid[row - 1][col] == '@') or (row < height - 1 and grid[row + 1][col] == '@'):
                         goal_locations.append((row, col))
 
     return start_locations, goal_locations
@@ -85,9 +80,17 @@ def generate_wfi_warehouse(cfg: WarehouseConfig = WarehouseConfig()):
 
     return str_grid
 
+def save_map_to_file(map_name, map_type, width, height, map_data, directory):
+    os.makedirs(directory, exist_ok=True)
+    file_path = os.path.join(directory, f"{map_name}.map")
+    with open(file_path, "w") as file:
+        file.write(f"type {map_type}\n")
+        file.write(f"height {height}\n")
+        file.write(f"width {width}\n")
+        file.write("map\n")
+        file.write(map_data)
+    print(f"Map saved to {file_path}")
 
 if __name__ == '__main__':
-    import os
-    os.makedirs('warehouse_maps', exist_ok=True)
 
-    maps_dict_to_yaml(f'warehouse_maps/test_map.yaml', {'0': generate_wfi_warehouse(WarehouseConfig())})
+    save_map_to_file('warehouse_test', 'octile', 20, 20, generate_wfi_warehouse(WarehouseConfig()), 'map_file')
