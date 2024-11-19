@@ -1,13 +1,6 @@
 import numpy as np
 import argparse
-
-def maps_dict_to_yaml(filename, maps):
-    import yaml
-    with open(filename, 'w') as file:
-        yaml.add_representer(str,
-                             lambda dumper, data: dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|'))
-        yaml.dump(maps, file)
-
+import os
 
 class MapRangeSettings:
     width_min: int = 17
@@ -47,38 +40,44 @@ def generate_map(settings):
         x = rng.integers(0, width)
         y = rng.integers(0, height)
         if map_data[y][x] == '.':
-            map_data[y][x] = '#'
+            map_data[y][x] = '@'
             obstacles_placed += 1
 
     return '\n'.join(''.join(row) for row in map_data)
 
+def save_map_to_file(map_name, map_type, width, height, map_data, directory):
+    os.makedirs(directory, exist_ok=True)
+    file_path = os.path.join(directory, f"{map_name}.map")
+    with open(file_path, "w") as file:
+        file.write(f"type {map_type}\n")
+        file.write(f"height {height}\n")
+        file.write(f"width {width}\n")
+        file.write("map\n")
+        file.write(map_data)
+    print(f"Map saved to {file_path}")
 
-def generate_and_save_maps(name_prefix, number_of_maps):
-    maps = {}
+def generate_and_save_maps(number_of_maps, output_dir):
     seed_range = range(number_of_maps)
-    max_digits = len(str(number_of_maps))
     settings_generator = MapRangeSettings()
 
     for seed in seed_range:
         settings = settings_generator.sample(seed)
         map_data = generate_map(settings)
-        map_name = f"{str(seed).zfill(max_digits)}"
-        maps[map_name] = map_data
-
-    maps_dict_to_yaml(f'{name_prefix}.yaml', maps)
+        map_name = f"random_{seed + 1}"
+        save_map_to_file(map_name, "octile", settings["width"], settings["height"], map_data, output_dir)
 
 
 if __name__ == "__main__":
-    import os
-    os.makedirs("random_maps", exist_ok=True)
-    # single generate test
-    map = {"map_0": generate_map(MapRangeSettings().manual_sample(10, 20, 0.2, 0))}
-    maps_dict_to_yaml(f'random_maps/test_map.yaml', map)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--number_of_maps", type=int, default=5)
+    parser.add_argument("--output_dir", type=str, default="map_file")
     args = parser.parse_args()
 
+    # single generate test
+    # map = generate_map(MapRangeSettings().manual_sample(10, 20, 0.2, 0))
+    # save_map_to_file("random_test", "octile", 10, 20, map, "map_file")
+
     # batch generate 5 maps
-    generate_and_save_maps("random_maps/maps", args.number_of_maps)
+    generate_and_save_maps(args.number_of_maps, args.output_dir)
 
