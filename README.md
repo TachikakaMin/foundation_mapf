@@ -18,5 +18,5 @@ bash gen_map_and_path.sh
 
 ## Installation
 ```bash
-pip install torch torchvision numpy pandas scikit-image matplotlib pyyaml orjson h5py opencv-python tensorboard
+pip install torch torchvision numpy pandas scikit-image matplotlib pyyaml orjson h5py opencv-python tensorboard pogema tqdm
 ```
