@@ -15,7 +15,7 @@ import matplotlib
 import random
 matplotlib.use('Agg')
 
-def train(args, model, train_loader, val_loader, optimizer, loss_fn, device):
+def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
     """
     Trains the UNet model using masked loss, gradient clipping, and custom optimizer.
     Also evaluates on validation set after each epoch.
@@ -121,14 +121,14 @@ if __name__ == "__main__":
     # 假设每个参数为32位浮点数（4字节）
     model_memory = total_params * 4 / (1024 ** 2)  # 转换为MB
 
-    print(f"参数总数 (parameter)：{total_params}")
-    print(f"模型大小约为 (model size)：{model_memory:.2f} MB")
+    print(f"参数总数 (parameter): {total_params}")
+    print(f"模型大小约为 (model size): {model_memory:.2f} MB")
     
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
                     net.parameters(),
                     lr=args.lr,
                     betas=(0.9, 0.999),  # 默认值，适合大多数情况
-                    weight_decay=1e-8
+                    weight_decay=args.weight_decay
                 )
     loss_fn = nn.CrossEntropyLoss(reduction="none")  
     
@@ -142,7 +142,7 @@ if __name__ == "__main__":
         if os.path.isdir(args.dataset_path):
             # A list containing the paths of all .yaml files.
             h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) \
-                if f.endswith(".h5") and map_string in f]
+                if f.endswith(".h5") and map_string in f][:20]
         else:
             h5_files = [args.dataset_path]
         test_list = random.sample(h5_files, int(0.1 * len(h5_files))) # 90% training, 10% validation
@@ -150,15 +150,15 @@ if __name__ == "__main__":
 
         
         train_data = MAPFDataset(train_list, args.agent_idx_dim)  
-        test_data = MAPFDataset(test_list, args.agent_idx_dim)  
+        # test_data = MAPFDataset(test_list, args.agent_idx_dim)  
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
                                 num_workers=16)
-        val_loader = DataLoader(test_data, shuffle=False,  
+        val_loader = DataLoader(train_data, shuffle=False,  
                                 batch_size=args.batch_size, 
                                 num_workers=16)
         
         train_loaders.append(train_loader)
         val_loaders.append(val_loader)
     # train
-    train(args, net, train_loader, val_loader, optimizer, loss_fn, device)
+    train(args, net, train_loaders, val_loaders, optimizer, loss_fn, device)

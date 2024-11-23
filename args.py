@@ -12,6 +12,8 @@ def get_args():
                         type=int, default=512, help='Batch size')
     parser.add_argument('--learning_rate', '-lr', metavar='LR', type=float, default=1e-5,
                         help='Learning rate', dest='lr')
+    parser.add_argument('--weight_decay', '-wd', type=float, default=1e-3,
+                        help='weight decay')
     parser.add_argument('--load', '-l', type=str, default=False, help='Load model from a .pth file')
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
     parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
