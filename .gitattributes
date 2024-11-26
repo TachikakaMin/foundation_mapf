@@ -1,2 +1,1 @@
-data_h5.tar.gz filter=lfs diff=lfs merge=lfs -text
 checkpoint_epoch_10.pth filter=lfs diff=lfs merge=lfs -text
