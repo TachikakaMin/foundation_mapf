@@ -78,7 +78,7 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         pre_y = fix_current_loc_tuple[i][1]
         agent_index = fix_current_loc[pre_x, pre_y]
         current_loc[current_x, current_y] = agent_index
-    feature = torch.zeros((5, m, n))
+    feature = torch.zeros((3, m, n))
     feature[0] = _map
     feature[1] = current_loc
     feature[2] = goal_loc
