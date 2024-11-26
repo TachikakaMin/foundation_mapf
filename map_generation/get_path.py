@@ -86,6 +86,11 @@ if __name__ == '__main__':
             for agent_number in agent_numbers:
                 for seed in range(seed_range):
                     print(f"Running map {map_name} with {agent_number} agents and seed {seed}")
+                    yaml_filename = f'data/{map_name}_agent_{agent_number}_seed_{seed}.yaml'
+                    # Skip if file already exists
+                    if os.path.exists(yaml_filename):
+                        print(f"Skipping existing file: {yaml_filename}")
+                        continue
                     config = GridConfig(map=map_content, num_agents=agent_number, observation_type="MAPF", seed=seed)
                     env = pogema_v0(config)
                     obs, _ = env.reset()
@@ -93,6 +98,7 @@ if __name__ == '__main__':
                     result = lacam.solve(obs)
 
                     formatted_data = convert_paths(result, map_name)
-                    yaml_filename = f'data/{map_name}_agent_{agent_number}_seed_{seed}.yaml'
+
+                        
                     with open(yaml_filename, 'w') as file:
                         yaml.dump(formatted_data, file, default_flow_style=False)
