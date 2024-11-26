@@ -77,7 +77,7 @@ if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
     # Iterate through all .map files in the specified folder
     for file_name in os.listdir(folder_name):
-        if file_name.endswith(".map"):
+        if file_name.endswith("16-16.map"):
             map_path = os.path.join(folder_name, file_name)
             map_name = os.path.splitext(file_name)[0]  # Extract base name without extension
 
