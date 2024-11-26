@@ -17,7 +17,7 @@ def evaluate_valid_loss(model, val_loaders, loss_fn, device):
     # Set model to evaluation mode
     model.eval()  
     val_loss = 0
-    val_num = 0
+    total_steps = 0  # Add step counter
 
     with torch.no_grad():  # Disable gradient calculation
         for val_loader in val_loaders:
@@ -33,8 +33,7 @@ def evaluate_valid_loss(model, val_loaders, loss_fn, device):
                 # Compute the loss and apply mask
                 loss = loss_fn(logits, action_y)
                 loss = loss * mask.float()
-                val_loss += loss.sum().item()
-                val_num += mask.sum().item()
-    val_loss /= val_num
+                val_loss += loss.sum().item() / mask.sum().item()
+                total_steps += 1  # Increment step counter
 
-    return val_loss
+    return val_loss / total_steps  # Average the loss by total steps

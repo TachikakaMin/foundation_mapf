@@ -34,7 +34,7 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
         # Set model to training mode
         model.train()  
         train_loss = 0
-        total_agent = 0
+        total_steps = 0  # Add step counter
         for train_loader in train_loaders:
             for batch in tqdm(train_loader):
                 # Load data onto the correct device (CPU/GPU)
@@ -58,13 +58,13 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
                 # Gradient clipping to prevent exploding gradients
                 # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 optimizer.step()
-                
-                # Train loss for epoch
-                train_loss += loss.sum().item()
-                total_agent += mask.sum().item()
+                train_loss += averaged_loss.item()
+                total_steps += 1  # Increment step counter
             
-        args.writer.add_scalar('Loss/Train', train_loss/total_agent, epoch)
-        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss/total_agent}")
+        # Average the loss by total number of steps
+        train_loss = train_loss / total_steps  # Add this line
+        args.writer.add_scalar('Loss/Train', train_loss, epoch)
+        print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss}")
         
         if epoch % args.plot_interval == 0:
             # Evaluate on validation set
@@ -72,12 +72,13 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
             args.writer.add_scalar('Loss/Val', val_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
-        if epoch % (2*args.plot_interval) == 0:    
-            # sample path visualization
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loader, 0, 0, device, action_choice="max")
-            animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
-            args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
-            print(current_goal_distance)
+        if epoch % (args.plot_interval) == 0:    
+            for i in range(len(val_loaders)):
+                # sample path visualization
+                current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loaders[i], 0, 0, device, action_choice="max")
+                animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
+                args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
+                print(current_goal_distance)
 
         if epoch % args.save_interval == 0:
             file_path = os.path.join(args.real_log_dir, f"model_checkpoint_epoch_{epoch}.pth")
@@ -97,12 +98,12 @@ if __name__ == "__main__":
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
     # args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
-    args.map_strings = [ "random", "empty"]
+    args.map_strings = [ "empty"]
     args.writer.add_text('Args', args_str, 0)
     
     
     args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    feature_channels = args.agent_idx_dim * 2 + 1 + 2
+    feature_channels = 5
     
     torch.manual_seed(args.seed)  # Set seed for torch
     np.random.seed(args.seed)     # Set seed for numpy
@@ -121,8 +122,8 @@ if __name__ == "__main__":
     # 假设每个参数为32位浮点数（4字节）
     model_memory = total_params * 4 / (1024 ** 2)  # 转换为MB
 
-    print(f"参数总数 (parameter): {total_params}")
-    print(f"模型大小约为 (model size): {model_memory:.2f} MB")
+    print(f"参数总数 (parameter):{total_params}")
+    print(f"模型大小约为 (model size):{model_memory:.2f} MB")
     
     optimizer = torch.optim.AdamW(
                     net.parameters(),
@@ -142,19 +143,20 @@ if __name__ == "__main__":
         if os.path.isdir(args.dataset_path):
             # A list containing the paths of all .yaml files.
             h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) \
-                if f.endswith(".h5") and map_string in f][:20]
+                if f.endswith(".h5") and map_string in f]
         else:
             h5_files = [args.dataset_path]
         test_list = random.sample(h5_files, int(0.1 * len(h5_files))) # 90% training, 10% validation
         train_list = [item for item in h5_files if item not in test_list]
-
+        print("train_list size", len(train_list))
+        print("test_list size", len(test_list))
         
-        train_data = MAPFDataset(train_list, args.agent_idx_dim)  
-        # test_data = MAPFDataset(test_list, args.agent_idx_dim)  
+        train_data = MAPFDataset(train_list, args.agent_idx_dim) 
+        test_data = MAPFDataset(test_list, args.agent_idx_dim)
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
                                 num_workers=16)
-        val_loader = DataLoader(train_data, shuffle=False,  
+        val_loader = DataLoader(test_data, shuffle=False,  
                                 batch_size=args.batch_size, 
                                 num_workers=16)
         
