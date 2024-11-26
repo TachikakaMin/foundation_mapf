@@ -5,6 +5,7 @@ runs/
 *.prof
 single_map_data_empty/
 .vscode/
+data
 data_h5/
 data_agent*
 test_data/
