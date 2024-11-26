@@ -7,6 +7,7 @@ single_map_data_empty/
 .vscode/
 data_h5/
 data/
+test_data/
 cache/
 # Byte-compiled / optimized / DLL files
 __pycache__/

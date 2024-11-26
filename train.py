@@ -103,7 +103,7 @@ if __name__ == "__main__":
     
     
     args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    feature_channels = 5
+    feature_channels = 3
     
     torch.manual_seed(args.seed)  # Set seed for torch
     np.random.seed(args.seed)     # Set seed for numpy

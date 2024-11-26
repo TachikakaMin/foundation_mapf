@@ -82,9 +82,9 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
     feature[0] = _map
     feature[1] = current_loc
     feature[2] = goal_loc
-    for i in range(agent_num):
-        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = goal_loc_tuple[i][0] - current_loc_tuple[i][0]
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = goal_loc_tuple[i][1] - current_loc_tuple[i][1]
+    # for i in range(agent_num):
+    #     feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = goal_loc_tuple[i][0] - current_loc_tuple[i][0]
+    #     feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = goal_loc_tuple[i][1] - current_loc_tuple[i][1]
     curr_mask = (current_loc > 0)
 
     return feature, curr_mask, current_loc, current_loc_tuple
@@ -101,13 +101,13 @@ def move_agent(agent_num, current_locs, action, _map):
         location = tmp_current_locs[i]
         act_dir = action[location[0], location[1]]
         
-        if act_dir == 0:  # left
+        if act_dir == 2:  # left
             location[1] = max(location[1] - 1, 0)  # 向左，确保不越界
         if act_dir == 1:  # right
             location[1] = min(location[1] + 1, m - 1)  # 向右，确保不越界
-        if act_dir == 2:  # up
+        if act_dir == 3:  # up
             location[0] = max(location[0] - 1, 0)  # 向上，确保不越界
-        if act_dir == 3:  # down
+        if act_dir == 4:  # down
             location[0] = min(location[0] + 1, n - 1)  # 向下，确保不越界
 
         tmp_current_locs[i] = location
@@ -216,12 +216,12 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     # Plot goal positions and add index labels for goals
     for i, goal in enumerate(goal_positions):
         ax.plot(goal[1], goal[0], 'bo', markersize=10)  # Dots represent the goals, size is adjusted to be large
-        ax.text(goal[1], goal[0], f'{i}', color='black', fontsize=5, ha='center', va='center')  # Add goal index
+        ax.text(goal[1], goal[0], f'{i}', color='black', fontsize=10, ha='center', va='center')  # Add goal index
 
     # Initialize agent markers for each agent at their starting positions
     agent_plots = [ax.plot([], [], 'go', markersize=10)[0] for _ in range(len(trajectories))]  # Dots for agents
     # Initialize text labels for each agent (for agent indexes on agents)
-    agent_texts = [ax.text(0, 0, '', color="black", fontsize=5, ha='center', va='center') for _ in range(len(trajectories))]
+    agent_texts = [ax.text(0, 0, '', color="black", fontsize=10, ha='center', va='center') for _ in range(len(trajectories))]
     # Initialize arrows from each agent to its goal
     agent_arrows = [ax.annotate("", xy=(0, 0), xytext=(0, 0), arrowprops=dict(arrowstyle="->", color='red')) for _ in range(len(trajectories))]
 
@@ -301,4 +301,4 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     frames = np.transpose(frames, (0, 3, 1, 2))  # Convert to (1, N, C, H, W) for TensorBoard
     frames = np.expand_dims(frames, 0)
     # Log the video to TensorBoard
-    args.writer.add_video('animation', frames,global_step=epoch, fps=fps)
+    # args.writer.add_video('animation', frames,global_step=epoch, fps=fps)
