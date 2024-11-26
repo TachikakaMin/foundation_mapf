@@ -55,8 +55,8 @@ def main():
     # Evaluate
     with torch.no_grad():
         # Calculate validation loss
-        # val_loss = evaluate_valid_loss(net, val_loaders, loss_fn, device)
-        # print(f"Validation Loss: {val_loss}")
+        val_loss = evaluate_valid_loss(net, val_loaders, loss_fn, device)
+        print(f"Validation Loss: {val_loss}")
         
         # Generate and animate paths for each validation loader
         for i, val_loader in enumerate(val_loaders):
