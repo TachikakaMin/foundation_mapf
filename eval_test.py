@@ -35,7 +35,7 @@ def main():
     for map_string in args.map_strings:
         if os.path.isdir(args.dataset_path):
             h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) 
-                       if f.endswith(".h5") and map_string in f and "agent_16" in f]
+                       if f.endswith(".h5") and map_string in f]
         else:
             h5_files = [args.dataset_path]
             
@@ -55,8 +55,8 @@ def main():
     # Evaluate
     with torch.no_grad():
         # Calculate validation loss
-        val_loss = evaluate_valid_loss(net, val_loaders, loss_fn, device)
-        print(f"Validation Loss: {val_loss}")
+        # val_loss = evaluate_valid_loss(net, val_loaders, loss_fn, device)
+        # print(f"Validation Loss: {val_loss}")
         
         # Generate and animate paths for each validation loader
         for i, val_loader in enumerate(val_loaders):
