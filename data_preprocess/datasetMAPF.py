@@ -22,6 +22,8 @@ class MAPFDataset(Dataset):
         self.train_data_map_name = []
         self.train_data_agent_locations = []
         self.all_map_data = {}
+        self.cache_dir = "cache"
+        os.makedirs(self.cache_dir, exist_ok=True)  # Create cache directory if it doesn't exist
         self.parallel_load_data(self.h5_files)
         
         self.train_data_len = np.array(self.train_data_len, dtype=int)
@@ -52,13 +54,34 @@ class MAPFDataset(Dataset):
                     os.remove(invalid_file)
 
     def process_h5_file(self, h5_file):
+        # Create cache filename based on h5_file path
+        cache_file = os.path.join(self.cache_dir, f"{os.path.basename(h5_file)}.npy")
+        
+        # Try to load from cache first
+        if os.path.exists(cache_file):
+            try:
+                cached_data = np.load(cache_file)
+                with h5py.File(h5_file, "r") as f:
+                    map_name = f['/statistics'].attrs['map']
+                    if not (map_name in self.all_map_data.keys()):
+                        self.all_map_data[map_name] = torch.FloatTensor(self.read_map(map_name))
+                return map_name, cached_data, h5_file
+            except Exception as e:
+                print(f"Cache load failed for {h5_file}, processing file: {e}")
+                
+        # If cache doesn't exist or is invalid, process the file
         with h5py.File(h5_file, "r") as f:
-            # 读取地图名称
             map_name = f['/statistics'].attrs['map']
             if not (map_name in self.all_map_data.keys()):
                 self.all_map_data[map_name] = torch.FloatTensor(self.read_map(map_name))
             agent_locations = self.preprocess_h5_data(f)
-        f.close()
+            
+            # Save to cache
+            try:
+                np.save(cache_file, agent_locations)
+            except Exception as e:
+                print(f"Failed to save cache for {h5_file}: {e}")
+                
         return map_name, agent_locations, h5_file
 
     
