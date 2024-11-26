@@ -6,7 +6,7 @@ runs/
 single_map_data_empty/
 .vscode/
 data_h5/
-data/
+data_agent*
 test_data/
 cache/
 # Byte-compiled / optimized / DLL files
