@@ -124,7 +124,7 @@ class MAPFDataset(Dataset):
     def new_generate_train_data_one(self, agent_locations, map_info, idx):
         m, n = map_info.shape[0], map_info.shape[1]
         # get feature, dim=5, dim 0 is map, dim 1 is current_robot_id, dim 2 is goal_robot_id, dim 3 is distance to goal on x-axis, dim 4 is distance to goal on y-axis
-        feature = torch.zeros((3, m, n))
+        feature = torch.zeros((5, m, n))
         feature[0] = map_info
         current_agent_locations = agent_locations[:, idx, :2]
         goal_agent_locations = agent_locations[:, -1, :2]
@@ -132,8 +132,8 @@ class MAPFDataset(Dataset):
         for i in range(current_agent_locations.shape[0]):
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
-            # feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
-            # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
+            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
+            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
         
         # get action info
         action_info = torch.zeros((m, n), dtype=torch.long)
