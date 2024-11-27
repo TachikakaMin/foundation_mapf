@@ -22,7 +22,7 @@ def get_args():
     parser.add_argument('--plot_interval', type=int, default=10, help='plot interval')
     parser.add_argument('--save_interval', type=int, default=100, help='save interval')
     parser.add_argument('--log_dir', type=str, default="runs", help='plot log')
-
+    parser.add_argument('--comments', type=str, default="", help='comments')
     #MAPF settings
     parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=250, 
                         help='Max number of agents')

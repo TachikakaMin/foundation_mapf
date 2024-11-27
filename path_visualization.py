@@ -301,4 +301,4 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     frames = np.transpose(frames, (0, 3, 1, 2))  # Convert to (1, N, C, H, W) for TensorBoard
     frames = np.expand_dims(frames, 0)
     # Log the video to TensorBoard
-    # args.writer.add_video('animation', frames,global_step=epoch, fps=fps)
+    args.writer.add_video('animation', frames,global_step=epoch, fps=fps)
