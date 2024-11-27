@@ -190,7 +190,7 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     return current_goal_distance, _map, trajectories, goal_positions
         
 
-def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500, save_path="eval_traj"):
+def animate_paths(args, name, epoch, trajectories, goal_positions, _map, interval=500, save_path="eval_traj"):
     import matplotlib.pyplot as plt
     import numpy as np
     import matplotlib.animation as animation
@@ -301,4 +301,4 @@ def animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500,
     frames = np.transpose(frames, (0, 3, 1, 2))  # Convert to (1, N, C, H, W) for TensorBoard
     frames = np.expand_dims(frames, 0)
     # Log the video to TensorBoard
-    args.writer.add_video('animation', frames,global_step=epoch, fps=fps)
+    args.writer.add_video(f'animation_{name}', frames,global_step=epoch, fps=fps)
