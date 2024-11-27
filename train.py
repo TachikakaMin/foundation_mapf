@@ -76,7 +76,7 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
             for i in range(len(val_loaders)):
                 # sample path visualization
                 current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loaders[i], 0, 0, device, action_choice="sample")
-                animate_paths(args, epoch, trajectories, goal_positions, _map, interval=500)
+                animate_paths(args, i, epoch, trajectories, goal_positions, _map, interval=500)
                 args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
                 print("current_goal_distance: ", current_goal_distance)
 
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
     # args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
-    args.map_strings = [ "empty"]
+    args.map_strings = [ "empty-16-16", "empty-32-32", "random-32-32"]
     args.writer.add_text('Args', args_str, 0)
     
     
