@@ -4,6 +4,7 @@ from lacam.inference import LacamInference
 
 import yaml
 import argparse
+from multiprocessing import Pool
 
 def convert_paths(agent_paths, map_file_name):
     # Convert agent paths into the required format
@@ -62,6 +63,28 @@ def read_map_file(file_path):
     map_content = ''.join(lines[4:])  # Join all map lines into a single string
     return map_content.strip()  # Remove any trailing whitespace
 
+# Add this new function to handle individual seed processing
+def process_seed(args):
+    map_name, map_content, agent_number, seed = args
+    yaml_filename = f'data/{map_name}_agent_{agent_number}_seed_{seed}.yaml'
+    
+    # Skip if file already exists
+    if os.path.exists(yaml_filename):
+        print(f"Skipping existing file: {yaml_filename}")
+        return
+    
+    config = GridConfig(map=map_content, num_agents=agent_number, observation_type="MAPF", seed=seed)
+    env = pogema_v0(config)
+    obs, _ = env.reset()
+    lacam = LacamInference()
+    result = lacam.solve(obs)
+    formatted_data = convert_paths(result, map_name)
+    
+    with open(yaml_filename, 'w') as file:
+        yaml.dump(formatted_data, file, default_flow_style=False)
+    
+    print(f"Completed map {map_name} with {agent_number} agents and seed {seed}")
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -73,26 +96,19 @@ if __name__ == '__main__':
     seed_range = args.seed_range
     agent_numbers = args.agent_numbers
     folder_name = args.folder
-    lacam = LacamInference()
     os.makedirs('data', exist_ok=True)
     # Iterate through all .map files in the specified folder
     for file_name in os.listdir(folder_name):
-        if file_name.endswith(".map"):
+        if file_name.endswith("16-16.map"):
             map_path = os.path.join(folder_name, file_name)
-            map_name = os.path.splitext(file_name)[0]  # Extract base name without extension
-
+            map_name = os.path.splitext(file_name)[0]
             map_content = read_map_file(map_path)
-            # For each .map file, process with different agent numbers and seeds
+            
             for agent_number in agent_numbers:
-                for seed in range(seed_range):
-                    print(f"Running map {map_name} with {agent_number} agents and seed {seed}")
-                    config = GridConfig(map=map_content, num_agents=agent_number, observation_type="MAPF", seed=seed)
-                    env = pogema_v0(config)
-                    obs, _ = env.reset()
-                    print(grid_to_str(env.grid))
-                    result = lacam.solve(obs)
-
-                    formatted_data = convert_paths(result, map_name)
-                    yaml_filename = f'data/{map_name}_agent_{agent_number}_seed_{seed}.yaml'
-                    with open(yaml_filename, 'w') as file:
-                        yaml.dump(formatted_data, file, default_flow_style=False)
+                # Create arguments for parallel processing
+                args_list = [(map_name, map_content, agent_number, seed) 
+                            for seed in range(seed_range)]
+                
+                # Use multiprocessing to process seeds in parallel
+                with Pool() as pool:
+                    pool.map(process_seed, args_list)

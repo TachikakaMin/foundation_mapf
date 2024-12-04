@@ -5,8 +5,11 @@ runs/
 *.prof
 single_map_data_empty/
 .vscode/
+data
 data_h5/
-data/
+data_agent*
+test_data/
+cache/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
