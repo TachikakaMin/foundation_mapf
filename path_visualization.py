@@ -40,12 +40,12 @@ def sample_agent_information(args, val_loader, a, b):
     
     return val_sample_feature, val_sample_agent_num, val_sample_map, \
         val_sample_curr_mask, val_sample_current_loc, agents_current_loc_tuple, \
-            val_sample_goal_loc, agents_goal_loc_dict, agents_goal_loc_tuple
+            val_sample_goal_loc, agents_goal_loc_dict
 
 
 def sample_agent_action_update(model, feature, agent_num, _map, \
                             curr_mask, current_loc, current_loc_tuple, \
-                                goal_loc, goal_loc_tuple, device, action_choice="max"):
+                                goal_loc, goal_loc_dict, device, action_choice="max"):
     model.eval()
     m, n = curr_mask.shape
     curr_mask = curr_mask.to(device)
@@ -83,8 +83,11 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
     feature[1] = current_loc
     feature[2] = goal_loc
     for i in range(agent_num):
-        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = goal_loc_tuple[i][0] - current_loc_tuple[i][0]
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = goal_loc_tuple[i][1] - current_loc_tuple[i][1]
+        agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
+        agent_idx = int(agent_idx)
+        agent_goal_loc = goal_loc_dict[agent_idx]
+        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
     curr_mask = (current_loc > 0)
 
     return feature, curr_mask, current_loc, current_loc_tuple
@@ -156,7 +159,7 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
 def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     current_feature, agent_num, _map, \
         current_mask, current_loc, current_loc_tuple, \
-        goal_loc, goal_loc_dict, goal_loc_tuple = sample_agent_information(args, val_loader, a, b)
+        goal_loc, goal_loc_dict = sample_agent_information(args, val_loader, a, b)
     
     # 用于存储每个智能体在每个步骤的位置，添加初始位置
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
@@ -165,7 +168,7 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
         current_feature, current_mask, current_loc, current_loc_tuple = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \
-                    goal_loc, goal_loc_tuple, device, action_choice
+                    goal_loc, goal_loc_dict, device, action_choice
         )
         # 记录当前步骤每个智能体的位置
         for i in range(agent_num):

@@ -99,6 +99,7 @@ if __name__ == "__main__":
 
     # args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
     args.map_strings = [ "empty-16-16", "empty-32-32", "random-32-32"]
+    # args.map_strings = [ "empty-16-16"]
     args.writer.add_text('Args', args_str, 0)
     
     
