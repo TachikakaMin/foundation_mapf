@@ -77,7 +77,7 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
                 # sample path visualization
                 current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loaders[i], 0, 0, device, action_choice="sample")
                 animate_paths(args, i, epoch, trajectories, goal_positions, _map, interval=500)
-                args.writer.add_scalar('Loss/video_goal_dis', current_goal_distance, epoch)
+                args.writer.add_scalar(f'Loss/video_goal_dis_{i}', current_goal_distance, epoch)
                 print("current_goal_distance: ", current_goal_distance)
 
         if epoch % args.save_interval == 0:
