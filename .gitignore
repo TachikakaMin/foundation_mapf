@@ -1,5 +1,7 @@
 sample_data/
 eval_traj/
+*.gz
+data_empty/
 runs/
 *.zip
 *.prof
