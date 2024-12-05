@@ -131,6 +131,7 @@ def move_agent(agent_num, current_locs, action, _map):
                 clash = 0
                 if current_locs[i][0] != location[0] or current_locs[i][1] != location[1]:
                     map_mark[location[0], location[1]] -= 1
+                    collision_count -= 1
                 collision_count += 1
 
 
@@ -146,6 +147,7 @@ def move_agent(agent_num, current_locs, action, _map):
                     tmp_current_locs[i] = current_locs[i]
                     tmp_current_locs[j] = current_locs[j]
                     clash = 0
+                    collision_count += 1
 
         if clash:
             break
