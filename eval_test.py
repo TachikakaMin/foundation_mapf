@@ -68,7 +68,7 @@ def main():
             print(f"Goal distance: {current_goal_distance}")
             
             # Save animation
-            animate_paths(args, 10, trajectories, goal_positions, _map, interval=500)
+            animate_paths(args, i, 10, trajectories, goal_positions, _map, interval=500)
 
 if __name__ == "__main__":
     main()
