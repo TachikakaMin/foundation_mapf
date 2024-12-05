@@ -151,7 +151,7 @@ def move_agent(agent_num, current_locs, action, _map):
 
         if clash:
             break
-    temperature = temperature + collision_count * 0.1
+    temperature = temperature + collision_count * 1
     return tmp_current_locs, temperature
 
 
