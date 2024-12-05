@@ -94,7 +94,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     seed_range = args.seed_range
-    agent_numbers = [i for i in range(2, args.agent_numbers + 1)]
+    agent_numbers = [i for i in range(2, args.agent_numbers + 1, 2)]
     folder_name = args.folder
     os.makedirs('data', exist_ok=True)
     # Iterate through all .map files in the specified folder
