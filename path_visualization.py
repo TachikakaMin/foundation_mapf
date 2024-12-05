@@ -6,6 +6,8 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
+from collections import defaultdict
+
 
 def sample_agent_information(args, val_loader, a, b):
     """
@@ -136,22 +138,26 @@ def move_agent(agent_num, current_locs, action, _map):
 
 
         # Check position swaps
-        for i in range(agent_num):
-            for j in range(i + 1, agent_num):
-                if (tmp_current_locs[i][0] == current_locs[j][0] and 
-                    tmp_current_locs[i][1] == current_locs[j][1] and
-                    tmp_current_locs[j][0] == current_locs[i][0] and 
-                    tmp_current_locs[j][1] == current_locs[i][1]):
-                    map_mark[tmp_current_locs[i][0], tmp_current_locs[i][1]] -= 1
-                    map_mark[tmp_current_locs[j][0], tmp_current_locs[j][1]] -= 1
-                    tmp_current_locs[i] = current_locs[i]
-                    tmp_current_locs[j] = current_locs[j]
-                    clash = 0
-                    collision_count += 1
+        swap_dict = defaultdict(list)
+        # 记录每个代理的当前位置
+        for idx, (tmp_loc, cur_loc) in enumerate(zip(tmp_current_locs, current_locs)):
+            # 将代理位置对加入哈希表
+            swap_dict[(tuple(tmp_loc), tuple(cur_loc))].append(idx)
 
+        # 检查是否有交换碰撞
+        for (loc1, loc2), agents in swap_dict.items():
+            if (loc2, loc1) in swap_dict:
+                agents_other = swap_dict[(loc2, loc1)]
+                for i in agents:
+                    for j in agents_other:
+                        if i < j:  # 避免重复检测
+                            tmp_current_locs[i] = current_locs[i]
+                            tmp_current_locs[j] = current_locs[j]
+                            collision_count += 1
+        print(f"collision_count: {collision_count}")
         if clash:
             break
-    temperature = temperature + collision_count * 1
+    temperature = min(temperature + collision_count * 0.01, 5)
     return tmp_current_locs, temperature
 
 
@@ -185,7 +191,8 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
     
     temperature = 1.0
-    for step in range(100):
+    for step in range(300):
+        print(f"step: {step}")
         current_feature, current_mask, current_loc, current_loc_tuple, temperature = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \

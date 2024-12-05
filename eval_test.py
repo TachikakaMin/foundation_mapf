@@ -22,8 +22,7 @@ def main():
     net = UNet(n_channels=feature_channels, n_classes=args.action_dim, bilinear=False)
     
     # Load checkpoint
-    checkpoint_path = "checkpoint.pth"
-    net.load_state_dict(torch.load(checkpoint_path))
+    net.load_state_dict(torch.load(args.load))
     net.to(device)
     net.eval()
     
