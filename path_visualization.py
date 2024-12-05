@@ -301,7 +301,7 @@ def animate_paths(args, name, epoch, trajectories, goal_positions, _map, interva
     save_path = os.path.join(save_path, f"{args.current_time}")
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    save_path = os.path.join(save_path, "video.mp4")
+    save_path = os.path.join(save_path, f"video_{epoch}.mp4")
     # Save the animation
     ani.save(save_path, writer=FFwriter)
 
