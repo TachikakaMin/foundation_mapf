@@ -89,12 +89,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed_range', type=int, default=4, help='Number of seeds to generate start and target positions')
-    parser.add_argument('--agent_numbers', type=int, nargs='+', default=[8, 16, 32, 64])
+    parser.add_argument('--agent_numbers', type=int, default=64)
     parser.add_argument('--folder', type=str, default='map_file', help='Folder containing .map files')
     args = parser.parse_args()
 
     seed_range = args.seed_range
-    agent_numbers = args.agent_numbers
+    agent_numbers = [i for i in range(2, args.agent_numbers + 1)]
     folder_name = args.folder
     os.makedirs('data', exist_ok=True)
     # Iterate through all .map files in the specified folder
