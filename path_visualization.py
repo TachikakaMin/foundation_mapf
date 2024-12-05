@@ -126,10 +126,26 @@ def move_agent(agent_num, current_locs, action, _map):
         for i in range(agent_num):
             location = tmp_current_locs[i]
             if map_mark[location[0], location[1]] > 1:  # 发生碰撞
-                tmp_current_locs[i] = current_locs[i]  # 回到原位置
-                clash = 0  # 表示有冲突，需要继续检测
-        
-        if clash:  # 如果没有冲突，跳出循环
+                tmp_current_locs[i] = current_locs[i]
+                clash = 0
+                if current_locs[i][0] != location[0] or current_locs[i][1] != location[1]:
+                    map_mark[location[0], location[1]] -= 1
+
+
+        # Check position swaps
+        for i in range(agent_num):
+            for j in range(i + 1, agent_num):
+                if (tmp_current_locs[i][0] == current_locs[j][0] and 
+                    tmp_current_locs[i][1] == current_locs[j][1] and
+                    tmp_current_locs[j][0] == current_locs[i][0] and 
+                    tmp_current_locs[j][1] == current_locs[i][1]):
+                    map_mark[tmp_current_locs[i][0], tmp_current_locs[i][1]] -= 1
+                    map_mark[tmp_current_locs[j][0], tmp_current_locs[j][1]] -= 1
+                    tmp_current_locs[i] = current_locs[i]
+                    tmp_current_locs[j] = current_locs[j]
+                    clash = 0
+
+        if clash:
             break
     
     return tmp_current_locs
