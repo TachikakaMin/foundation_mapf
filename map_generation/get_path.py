@@ -77,8 +77,8 @@ def process_seed(args):
     # print(f"map_content: {map_content}")
     env = pogema_v0(config)
     obs, _ = env.reset()
-    # print(f"env.grid: {grid_to_str(env.grid)}")
-    # input("Press Enter to continue...")
+    #print(f"env.grid: {grid_to_str(env.grid)}")
+    #input("Press Enter to continue...")
     lacam = LacamInference()
     result = lacam.solve(obs)
     formatted_data = convert_paths(result, map_name)
@@ -102,7 +102,7 @@ if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
     # Iterate through all .map files in the specified folder
     for file_name in os.listdir(folder_name):
-        if file_name.endswith("16-16.map"):
+        if file_name.endswith("random-16-16-10.map"):
             map_path = os.path.join(folder_name, file_name)
             map_name = os.path.splitext(file_name)[0]
             map_content = read_map_file(map_path)
