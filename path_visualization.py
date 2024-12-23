@@ -162,7 +162,7 @@ def move_agent(agent_num, current_locs, action, _map):
                 swap_dict.pop((loc2, loc1))
                 collision_count += 1
         print(f"collision_count: {collision_count}")
-        if collision_count:
+        if collision_count == 0:
             break
     temperature = min(temperature + collision_count * 0.01, 5)
     return tmp_current_locs, temperature
