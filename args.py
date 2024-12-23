@@ -24,8 +24,8 @@ def get_args():
     parser.add_argument('--log_dir', type=str, default="runs", help='plot log')
     parser.add_argument('--comments', type=str, default="", help='comments')
     #MAPF settings
-    parser.add_argument('--max_agent_num', '-na', metavar='NA', type=int, default=250, 
-                        help='Max number of agents')
+    parser.add_argument('--feature_dim', '-fd', metavar='FD', type=int, default=5, 
+                        help='feature dimension')
     parser.add_argument('--action_dim', '-ad', metavar='AD', type=int, default=5, help='Action types')
     return parser.parse_args()
 

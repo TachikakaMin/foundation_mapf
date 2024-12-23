@@ -18,7 +18,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Initialize model
-    feature_channels = 5
+    feature_channels = args.feature_dim
     net = UNet(n_channels=feature_channels, n_classes=args.action_dim, bilinear=False)
     
     # Load checkpoint
@@ -27,7 +27,7 @@ def main():
     net.eval()
     
     # Set up validation data
-    args.map_strings = ["empty"]  # or whichever maps you want to evaluate on
+    args.map_strings = ["random"]  # or whichever maps you want to evaluate on
     args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
     
     val_loaders = []

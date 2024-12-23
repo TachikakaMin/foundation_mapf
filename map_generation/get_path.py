@@ -74,8 +74,11 @@ def process_seed(args):
         return
     
     config = GridConfig(map=map_content, num_agents=agent_number, observation_type="MAPF", seed=seed)
+    # print(f"map_content: {map_content}")
     env = pogema_v0(config)
     obs, _ = env.reset()
+    # print(f"env.grid: {grid_to_str(env.grid)}")
+    # input("Press Enter to continue...")
     lacam = LacamInference()
     result = lacam.solve(obs)
     formatted_data = convert_paths(result, map_name)

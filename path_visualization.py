@@ -6,7 +6,6 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
-from collections import defaultdict
 
 
 def sample_agent_information(args, val_loader, a, b):
@@ -80,10 +79,20 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         pre_y = fix_current_loc_tuple[i][1]
         agent_index = fix_current_loc[pre_x, pre_y]
         current_loc[current_x, current_y] = agent_index
-    feature = torch.zeros((5, m, n))
+    # last_loc_1 = feature[1]
+    # last_loc_2 = feature[5]
+    # last_loc_3 = feature[6]
+    # last_loc_4 = feature[7]
+    # last_loc_5 = feature[8]
+    feature = torch.zeros_like(feature)
     feature[0] = _map
     feature[1] = current_loc
     feature[2] = goal_loc
+    # feature[5] = last_loc_1
+    # feature[6] = last_loc_2
+    # feature[7] = last_loc_3
+    # feature[8] = last_loc_4
+    # feature[9] = last_loc_5
     for i in range(agent_num):
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
         agent_idx = int(agent_idx)
@@ -120,7 +129,7 @@ def move_agent(agent_num, current_locs, action, _map):
     
     # 处理智能体之间的碰撞
     while True:
-        clash = 1
+        collision_count = 0
         map_mark = 1 * _map  # 创建占位地图
         for i in range(agent_num):
             location = tmp_current_locs[i]
@@ -129,33 +138,31 @@ def move_agent(agent_num, current_locs, action, _map):
         for i in range(agent_num):
             location = tmp_current_locs[i]
             if map_mark[location[0], location[1]] > 1:  # 发生碰撞
-                tmp_current_locs[i] = current_locs[i]
-                clash = 0
                 if current_locs[i][0] != location[0] or current_locs[i][1] != location[1]:
                     map_mark[location[0], location[1]] -= 1
-                    collision_count -= 1
-                collision_count += 1
+                    collision_count += 1
+                    tmp_current_locs[i] = current_locs[i]
+
 
 
         # Check position swaps
-        swap_dict = defaultdict(list)
+        swap_dict = {}
         # 记录每个代理的当前位置
         for idx, (tmp_loc, cur_loc) in enumerate(zip(tmp_current_locs, current_locs)):
             # 将代理位置对加入哈希表
-            swap_dict[(tuple(tmp_loc), tuple(cur_loc))].append(idx)
+            swap_dict[(tuple(tmp_loc), tuple(cur_loc))] = idx
 
         # 检查是否有交换碰撞
-        for (loc1, loc2), agents in swap_dict.items():
+        for (loc1, loc2), agent in swap_dict.items():
             if (loc2, loc1) in swap_dict:
-                agents_other = swap_dict[(loc2, loc1)]
-                for i in agents:
-                    for j in agents_other:
-                        if i < j:  # 避免重复检测
-                            tmp_current_locs[i] = current_locs[i]
-                            tmp_current_locs[j] = current_locs[j]
-                            collision_count += 1
+                agent_other = swap_dict[(loc2, loc1)]
+                tmp_current_locs[agent] = current_locs[agent]
+                tmp_current_locs[agent_other] = current_locs[agent_other]                collision_count += 1
+                swap_dict.pop((loc1, loc2))
+                swap_dict.pop((loc2, loc1))
+                collision_count += 1
         print(f"collision_count: {collision_count}")
-        if clash:
+        if collision_count:
             break
     temperature = min(temperature + collision_count * 0.01, 5)
     return tmp_current_locs, temperature

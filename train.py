@@ -97,14 +97,11 @@ if __name__ == "__main__":
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
-    # args.map_strings = ["maze", "empty", "random", "room"] #, "Boston"]
-    args.map_strings = [ "empty-16-16", "empty-32-32", "random-32-32"]
-    # args.map_strings = [ "empty-16-16"]
+    args.map_strings = ["random-32-32"]
     args.writer.add_text('Args', args_str, 0)
     
     
-    args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    feature_channels = 5
+    feature_dim = args.feature_dim
     
     torch.manual_seed(args.seed)  # Set seed for torch
     np.random.seed(args.seed)     # Set seed for numpy
@@ -114,7 +111,7 @@ if __name__ == "__main__":
     
     # model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    net = UNet(n_channels=feature_channels, n_classes=args.action_dim, bilinear=False)
+    net = UNet(n_channels=feature_dim, n_classes=args.action_dim, bilinear=False)
     
     # 计算可训练参数的总数
     total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
@@ -152,8 +149,8 @@ if __name__ == "__main__":
         print("train_list size", len(train_list))
         print("test_list size", len(test_list))
         
-        train_data = MAPFDataset(train_list, args.agent_idx_dim) 
-        test_data = MAPFDataset(test_list, args.agent_idx_dim)
+        train_data = MAPFDataset(train_list, feature_dim) 
+        test_data = MAPFDataset(test_list, feature_dim)
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
                                 num_workers=16)

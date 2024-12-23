@@ -15,8 +15,8 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 
 
 class MAPFDataset(Dataset):
-    def __init__(self, h5_files, agent_dim):
-        self.agent_dim = agent_dim
+    def __init__(self, h5_files, feature_dim):
+        self.feature_dim = feature_dim
         self.h5_files = h5_files
         self.train_data_len = []
         self.train_data_map_name = []
@@ -123,18 +123,27 @@ class MAPFDataset(Dataset):
     
     def new_generate_train_data_one(self, agent_locations, map_info, idx):
         m, n = map_info.shape[0], map_info.shape[1]
-        # get feature, dim=5, dim 0 is map, dim 1 is current_robot_id, dim 2 is goal_robot_id, dim 3 is distance to goal on x-axis, dim 4 is distance to goal on y-axis
-        feature = torch.zeros((5, m, n))
+        feature = torch.zeros((self.feature_dim, m, n))
         feature[0] = map_info
         current_agent_locations = agent_locations[:, idx, :2]
         goal_agent_locations = agent_locations[:, -1, :2]
+        # last_agent_locations_1 = agent_locations[:, idx-1, :2] if idx > 0 else current_agent_locations
+        # last_agent_locations_2 = agent_locations[:, idx-2, :2] if idx > 1 else last_agent_locations_1
+        # last_agent_locations_3 = agent_locations[:, idx-3, :2] if idx > 2 else last_agent_locations_2
+        # last_agent_locations_4 = agent_locations[:, idx-4, :2] if idx > 3 else last_agent_locations_3
+        # last_agent_locations_5 = agent_locations[:, idx-5, :2] if idx > 4 else last_agent_locations_4
 
         for i in range(current_agent_locations.shape[0]):
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
             feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
             feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
-        
+            # feature[5, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
+            # feature[6, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
+            # feature[7, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
+            # feature[8, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1
+            # feature[9, last_agent_locations_5[i, 0], last_agent_locations_5[i, 1]] = i+1
+
         # get action info
         action_info = torch.zeros((m, n), dtype=torch.long)
         next_agent_locations = agent_locations[:, idx+1, :2]
