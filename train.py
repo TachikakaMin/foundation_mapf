@@ -97,7 +97,7 @@ if __name__ == "__main__":
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
-    args.map_strings = ["random-32-32"]
+    args.map_strings = ["random-16-16"]
     args.writer.add_text('Args', args_str, 0)
     
     

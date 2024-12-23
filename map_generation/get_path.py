@@ -81,6 +81,9 @@ def process_seed(args):
     #input("Press Enter to continue...")
     lacam = LacamInference()
     result = lacam.solve(obs)
+    if result is None:
+        print(f"Lacam failed to find path for {agent_number} agents")
+        return
     formatted_data = convert_paths(result, map_name)
     
     with open(yaml_filename, 'w') as file:
@@ -102,7 +105,7 @@ if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
     # Iterate through all .map files in the specified folder
     for file_name in os.listdir(folder_name):
-        if file_name.endswith("random-16-16-10.map"):
+        if file_name.endswith("random-32-32-20.map"):
             map_path = os.path.join(folder_name, file_name)
             map_name = os.path.splitext(file_name)[0]
             map_content = read_map_file(map_path)

@@ -48,7 +48,7 @@ class MAPFDataset(Dataset):
                     self.train_data_map_name.append(map_name)
                     self.train_data_agent_locations.append(agent_locations)
                 except Exception as e:
-                    # 如果文件不合法或有错误，则删除该文件
+                    print(e)
                     invalid_file = futures[future]
                     print(f"Invalid file detected and removed: {invalid_file}")
                     os.remove(invalid_file)
@@ -92,7 +92,7 @@ class MAPFDataset(Dataset):
             data = f.readlines()
             for l in data[4:]:
                 tmp = l.strip()
-                tmp = tmp.replace(".", "0").replace("@", "1")  # 1 表示障碍物，0 表示空白
+                tmp = tmp.replace(".", "0").replace("@", "1").replace("#", "1")
                 map_data.append(tmp)
         map_data = np.array([list(line) for line in map_data], dtype=int)
         return map_data

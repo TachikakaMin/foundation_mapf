@@ -161,7 +161,6 @@ def move_agent(agent_num, current_locs, action, _map):
                 swap_dict.pop((loc1, loc2))
                 swap_dict.pop((loc2, loc1))
                 collision_count += 1
-        print(f"collision_count: {collision_count}")
         if collision_count == 0:
             break
     temperature = min(temperature + collision_count * 0.01, 5)
@@ -198,8 +197,7 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
     
     temperature = 1.0
-    for step in range(300):
-        print(f"step: {step}")
+    for step in range(100):
         current_feature, current_mask, current_loc, current_loc_tuple, temperature = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \
