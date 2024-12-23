@@ -157,7 +157,7 @@ def move_agent(agent_num, current_locs, action, _map):
             if (loc2, loc1) in swap_dict:
                 agent_other = swap_dict[(loc2, loc1)]
                 tmp_current_locs[agent] = current_locs[agent]
-                tmp_current_locs[agent_other] = current_locs[agent_other]                collision_count += 1
+                tmp_current_locs[agent_other] = current_locs[agent_other]
                 swap_dict.pop((loc1, loc2))
                 swap_dict.pop((loc2, loc1))
                 collision_count += 1
