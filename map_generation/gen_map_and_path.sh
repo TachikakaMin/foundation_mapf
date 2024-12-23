@@ -7,4 +7,4 @@ python3 map_generation/random_generator.py --number_of_maps 5
 python3 map_generation/maze_generator.py --number_of_maps 5
 
 # Invoke get_path.py
-python3 map_generation/get_path.py --seed_range 200 --agent_numbers 256
+python3 map_generation/get_path.py --seed_range 400 --agent_numbers 64 --map_file map_file/random-32-32-20.map

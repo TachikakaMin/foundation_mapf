@@ -26,22 +26,13 @@ def main():
     net.to(device)
     net.eval()
     
-    # Set up validation data
-    args.map_strings = ["random"]  # or whichever maps you want to evaluate on
-    args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    
     val_loaders = []
-    for map_string in args.map_strings:
-        if os.path.isdir(args.dataset_path):
-            h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) 
-                       if f.endswith(".h5") and map_string in f]
-        else:
-            h5_files = [args.dataset_path]
-            
-        # Use a smaller subset for testing if needed
-        test_files = h5_files
+    for dataset_path in args.dataset_paths:
+        h5_files = [os.path.join(dataset_path, f) for f in os.listdir(dataset_path) 
+                   if f.endswith(".h5")]
+        test_files = h5_files[:10]
         
-        test_data = MAPFDataset(test_files, args.agent_idx_dim)
+        test_data = MAPFDataset(test_files, args.feature_dim)
         val_loader = DataLoader(test_data, 
                               shuffle=False,  
                               batch_size=args.batch_size, 
@@ -59,8 +50,7 @@ def main():
         
         # Generate and animate paths for each validation loader
         for i, val_loader in enumerate(val_loaders):
-            print(f"Generating path visualization for map type {args.map_strings[i]}")
-            print(f"length of val_loader: {len(val_loader.dataset)}")
+            print(f"Generating path visualization for map type {args.dataset_paths[i]}")
             current_goal_distance, _map, trajectories, goal_positions = path_formation(
                 args, net, val_loader, 0, 0, device, action_choice="sample"
             )

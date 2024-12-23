@@ -1,4 +1,5 @@
 import os
+from tqdm import tqdm
 from pogema import GridConfig, pogema_v0
 from lacam.inference import LacamInference
 
@@ -66,55 +67,42 @@ def read_map_file(file_path):
 # Add this new function to handle individual seed processing
 def process_seed(args):
     map_name, map_content, agent_number, seed = args
-    yaml_filename = f'data/{map_name}_agent_{agent_number}_seed_{seed}.yaml'
+    yaml_filename = f'data/{map_name}/agent_{agent_number}_seed_{seed}.yaml'
     
     # Skip if file already exists
     if os.path.exists(yaml_filename):
-        print(f"Skipping existing file: {yaml_filename}")
         return
     
     config = GridConfig(map=map_content, num_agents=agent_number, observation_type="MAPF", seed=seed)
-    # print(f"map_content: {map_content}")
     env = pogema_v0(config)
     obs, _ = env.reset()
-    #print(f"env.grid: {grid_to_str(env.grid)}")
-    #input("Press Enter to continue...")
     lacam = LacamInference()
     result = lacam.solve(obs)
     if result is None:
         print(f"Lacam failed to find path for {agent_number} agents")
         return
     formatted_data = convert_paths(result, map_name)
-    
     with open(yaml_filename, 'w') as file:
         yaml.dump(formatted_data, file, default_flow_style=False)
-    
-    print(f"Completed map {map_name} with {agent_number} agents and seed {seed}")
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed_range', type=int, default=4, help='Number of seeds to generate start and target positions')
     parser.add_argument('--agent_numbers', type=int, default=64)
-    parser.add_argument('--folder', type=str, default='map_file', help='Folder containing .map files')
+    parser.add_argument('--map_file', type=str, default='map_file/random-32-32-20.map', help='Map file')
     args = parser.parse_args()
-
-    seed_range = args.seed_range
-    agent_numbers = [i for i in range(2, args.agent_numbers + 1, 2)]
-    folder_name = args.folder
-    os.makedirs('data', exist_ok=True)
-    # Iterate through all .map files in the specified folder
-    for file_name in os.listdir(folder_name):
-        if file_name.endswith("random-32-32-20.map"):
-            map_path = os.path.join(folder_name, file_name)
-            map_name = os.path.splitext(file_name)[0]
-            map_content = read_map_file(map_path)
+    map_name = args.map_file.split('/')[-1].split('.')[0]
+    os.makedirs('data/' + map_name, exist_ok=True)
+    map_content = read_map_file(args.map_file)
             
-            for agent_number in agent_numbers:
-                # Create arguments for parallel processing
-                args_list = [(map_name, map_content, agent_number, seed) 
-                            for seed in range(seed_range)]
-                
-                # Use multiprocessing to process seeds in parallel
-                with Pool() as pool:
-                    pool.map(process_seed, args_list)
+    agent_numbers = [i for i in range(args.agent_numbers, 2, -2)]
+    for agent_number in tqdm(agent_numbers, desc='Processing agent counts'):
+        # Create arguments for parallel processing
+        args_list = [(map_name, map_content, agent_number, seed) 
+                    for seed in range(args.seed_range)]
+        
+        # Use multiprocessing to process seeds in parallel
+        with Pool() as pool:
+            pool.map(process_seed, args_list)
+        

@@ -78,7 +78,7 @@ class LacamLib:
 
 class LacamInference:
     def __init__(self):
-        self.timeouts = [1.0, 5.0, 10.0, 60.0]
+        self.timeouts = [1.0, 5.0, 10.0]
         self.lacam_agents = None
         self.lacam_lib = LacamLib("map_generation/lacam/liblacam.so")
         

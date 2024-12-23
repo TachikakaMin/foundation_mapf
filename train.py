@@ -72,7 +72,7 @@ def train(args, model, train_loaders, val_loaders, optimizer, loss_fn, device):
             args.writer.add_scalar('Loss/Val', val_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
             
-        if epoch % (args.plot_interval) == 0:    
+        if epoch % args.plot_interval == 0:    
             for i in range(len(val_loaders)):
                 # sample path visualization
                 current_goal_distance, _map, trajectories, goal_positions = path_formation(args, model, val_loaders[i], 0, 0, device, action_choice="sample")
@@ -97,12 +97,8 @@ if __name__ == "__main__":
     args_dict = vars(args)  # 将 args 转换为字典
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
-    args.map_strings = ["random-16-16"]
     args.writer.add_text('Args', args_str, 0)
-    
-    
-    feature_dim = args.feature_dim
-    
+        
     torch.manual_seed(args.seed)  # Set seed for torch
     np.random.seed(args.seed)     # Set seed for numpy
     if torch.cuda.is_available():
@@ -111,7 +107,7 @@ if __name__ == "__main__":
     
     # model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    net = UNet(n_channels=feature_dim, n_classes=args.action_dim, bilinear=False)
+    net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, bilinear=False)
     
     # 计算可训练参数的总数
     total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
@@ -135,22 +131,17 @@ if __name__ == "__main__":
     
     train_loaders = []
     val_loaders = []
-    for map_string in args.map_strings:
-        
-        
-        if os.path.isdir(args.dataset_path):
-            # A list containing the paths of all .yaml files.
-            h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) \
-                if f.endswith(".h5") and map_string in f]
-        else:
-            h5_files = [args.dataset_path]
+    for dataset_path in args.dataset_paths:
+
+        h5_files = [os.path.join(dataset_path, f) for f in os.listdir(dataset_path) if f.endswith(".h5")]
+
         test_list = random.sample(h5_files, int(0.1 * len(h5_files))) # 90% training, 10% validation
         train_list = [item for item in h5_files if item not in test_list]
         print("train_list size", len(train_list))
         print("test_list size", len(test_list))
         
-        train_data = MAPFDataset(train_list, feature_dim) 
-        test_data = MAPFDataset(test_list, feature_dim)
+        train_data = MAPFDataset(train_list, args.feature_dim) 
+        test_data = MAPFDataset(test_list, args.feature_dim)
         train_loader = DataLoader(train_data, shuffle=True,  
                                 batch_size=args.batch_size,  
                                 num_workers=16)

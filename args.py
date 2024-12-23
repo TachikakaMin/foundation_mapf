@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--scale', '-s', type=float, default=0.5, help='Downscaling factor of the images')
     parser.add_argument('--amp', action='store_true', default=False, help='Use mixed precision')
     parser.add_argument('--bilinear', action='store_true', default=False, help='Use bilinear upsampling')
-    parser.add_argument('--dataset_path', '-dp', type=str, default="data/dataset.npz")
+    parser.add_argument('--dataset_paths', '-dp', nargs='+', default="data_random_32_20")
     parser.add_argument('--plot_interval', type=int, default=1, help='plot interval')
     parser.add_argument('--save_interval', type=int, default=20, help='save interval')
     parser.add_argument('--log_dir', type=str, default="runs", help='plot log')

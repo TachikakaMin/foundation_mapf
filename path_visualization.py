@@ -163,14 +163,10 @@ def move_agent(agent_num, current_locs, action, _map):
                 collision_count += 1
         if collision_count == 0:
             break
-    temperature = min(temperature + collision_count * 0.01, 5)
+    temperature = min(temperature + collision_count * 0.1, 5)
     return tmp_current_locs, temperature
 
 
-
-
-
-    
 def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic):
     total_distance = 0
     for idx in current_loc_tuple:
@@ -185,7 +181,6 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
         total_distance += distance
 
     return total_distance
-
 
 
 def path_formation(args, model, val_loader, a, b, device, action_choice="max"):

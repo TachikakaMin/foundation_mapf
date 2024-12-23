@@ -1,4 +1,5 @@
 import os
+import traceback
 import torch
 import pandas as pd
 from skimage import io, transform
@@ -48,7 +49,7 @@ class MAPFDataset(Dataset):
                     self.train_data_map_name.append(map_name)
                     self.train_data_agent_locations.append(agent_locations)
                 except Exception as e:
-                    print(e)
+                    print(traceback.format_exc())
                     invalid_file = futures[future]
                     print(f"Invalid file detected and removed: {invalid_file}")
                     os.remove(invalid_file)
