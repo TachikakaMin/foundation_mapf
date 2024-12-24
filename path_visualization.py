@@ -6,7 +6,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
-
+from data_preprocess.datasetMAPF import calculate_minimum_distance
 
 def sample_agent_information(args, val_loader, a, b):
     """
@@ -99,6 +99,8 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_goal_loc = goal_loc_dict[agent_idx]
         feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
         feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
+        minimum_distance = calculate_minimum_distance(current_loc_tuple[i].tolist(), agent_goal_loc.tolist(), _map+current_loc)
+        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = minimum_distance
     curr_mask = (current_loc > 0)
 
     return feature, curr_mask, current_loc, current_loc_tuple, temperature

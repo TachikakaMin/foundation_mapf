@@ -13,7 +13,53 @@ import orjson
 from tqdm import tqdm
 import h5py
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import heapq
 
+def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
+    def manhattan_distance(p1, p2):
+        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+
+    def a_star(start, goal, grid):
+        if tuple(start) == tuple(goal):
+            return 0
+
+        rows, cols = grid.shape
+        start = tuple(start)
+        goal = tuple(goal)
+
+        # Priority queue: (f_score, g_score, position)
+        open_set = [(manhattan_distance(start, goal), 0, start)]
+        g_score = {start: 0}
+        visited = set()
+        directions = [(0, 1), (0, -1), (-1, 0), (1, 0)]
+
+        while open_set:
+            _, current_g, current = heapq.heappop(open_set)
+            # Early exit if goal is reached
+            if current == goal:
+                return current_g
+
+            # Mark current as visited
+            if current in visited:
+                continue
+            visited.add(current)
+
+            # Explore neighbors
+            for dx, dy in directions:
+                next_pos = (current[0] + dx, current[1] + dy)
+
+                # Check bounds and obstacles
+                if 0 <= next_pos[0] < rows and 0 <= next_pos[1] < cols and grid[next_pos[0], next_pos[1]] == 0:
+                    tentative_g = current_g + 1
+
+                    if next_pos not in g_score or tentative_g < g_score[next_pos]:
+                        g_score[next_pos] = tentative_g
+                        f_score = tentative_g + manhattan_distance(next_pos, goal)
+                        heapq.heappush(open_set, (f_score, tentative_g, next_pos))
+
+        return -1  # No path found
+
+    return a_star(current_agent_location, goal_agent_location, map_info)
 
 class MAPFDataset(Dataset):
     def __init__(self, h5_files, feature_dim):
@@ -139,6 +185,8 @@ class MAPFDataset(Dataset):
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
             feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
             feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
+            minimum_distance = calculate_minimum_distance(current_agent_locations[i].tolist(), goal_agent_locations[i].tolist(), map_info)
+            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = minimum_distance
             # feature[5, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
             # feature[6, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
             # feature[7, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
