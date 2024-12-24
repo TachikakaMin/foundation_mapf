@@ -1,5 +1,6 @@
 import os
 import traceback
+from functools import lru_cache
 import torch
 import pandas as pd
 from skimage import io, transform
@@ -15,6 +16,7 @@ import h5py
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import heapq
 
+@lru_cache(maxsize=1000000)
 def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
     def manhattan_distance(p1, p2):
         return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
@@ -185,7 +187,7 @@ class MAPFDataset(Dataset):
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
             feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
             feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
-            minimum_distance = calculate_minimum_distance(current_agent_locations[i].tolist(), goal_agent_locations[i].tolist(), map_info)
+            minimum_distance = calculate_minimum_distance(tuple(current_agent_locations[i]), tuple(goal_agent_locations[i]), map_info)
             feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = minimum_distance
             # feature[5, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
             # feature[6, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
