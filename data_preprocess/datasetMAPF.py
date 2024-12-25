@@ -81,7 +81,7 @@ class MAPFDataset(Dataset):
         
         self.train_data_len = np.array(self.train_data_len, dtype=int)
         self.train_cumsum_len = np.cumsum(self.train_data_len)
-        for map_name in self.train_data_map_name:
+        for map_name in self.all_map_data.keys():
             distance_cache_file = os.path.join(self.cache_dir, f"{os.path.basename(map_name)}_distance.pkl")
         
             if not os.path.exists(distance_cache_file):
@@ -185,7 +185,7 @@ class MAPFDataset(Dataset):
         feature[0] = map_info
         current_agent_locations = agent_locations[:, idx, :2]
         goal_agent_locations = agent_locations[:, -1, :2]
-        # last_agent_locations_1 = agent_locations[:, idx-1, :2] if idx > 0 else current_agent_locations
+        last_agent_locations_1 = agent_locations[:, idx-1, :2] if idx > 0 else current_agent_locations
         # last_agent_locations_2 = agent_locations[:, idx-2, :2] if idx > 1 else last_agent_locations_1
         # last_agent_locations_3 = agent_locations[:, idx-3, :2] if idx > 2 else last_agent_locations_2
         # last_agent_locations_4 = agent_locations[:, idx-4, :2] if idx > 3 else last_agent_locations_3
@@ -218,7 +218,7 @@ class MAPFDataset(Dataset):
             dy = dy / norm if norm > 0 else 0
             feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
             feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
-            # feature[5, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
+            feature[5, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
             # feature[6, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
             # feature[7, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
             # feature[8, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1
