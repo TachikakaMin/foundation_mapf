@@ -80,18 +80,18 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_index = fix_current_loc[pre_x, pre_y]
         current_loc[current_x, current_y] = agent_index
     last_loc_1 = feature[1]
-    # last_loc_2 = feature[5]
-    # last_loc_3 = feature[6]
-    # last_loc_4 = feature[7]
+    last_loc_2 = feature[5]
+    last_loc_3 = feature[6]
+    last_loc_4 = feature[7]
     # last_loc_5 = feature[8]
     feature = torch.zeros_like(feature)
     feature[0] = _map
     feature[1] = current_loc
     feature[2] = goal_loc
     feature[5] = last_loc_1
-    # feature[6] = last_loc_2
-    # feature[7] = last_loc_3
-    # feature[8] = last_loc_4
+    feature[6] = last_loc_2
+    feature[7] = last_loc_3
+    feature[8] = last_loc_4
     # feature[9] = last_loc_5
     for i in range(agent_num):
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
