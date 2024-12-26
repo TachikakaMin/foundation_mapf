@@ -192,6 +192,7 @@ class MAPFDataset(Dataset):
         # last_agent_locations_5 = agent_locations[:, idx-5, :2] if idx > 4 else last_agent_locations_4
 
         for i in range(current_agent_locations.shape[0]):
+            feature[0, current_agent_locations[i, 0], current_agent_locations[i, 1]] = 1
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
             distance_to_goal = self.get_distance(

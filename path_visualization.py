@@ -78,6 +78,9 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         pre_y = fix_current_loc_tuple[i][1]
         agent_index = fix_current_loc[pre_x, pre_y]
         current_loc[current_x, current_y] = agent_index
+        _map[pre_x, pre_y] = 0
+        _map[current_x, current_y] = 1
+
     last_loc_1 = feature[1]
     # last_loc_2 = feature[5]
     # last_loc_3 = feature[6]
