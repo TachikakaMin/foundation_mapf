@@ -109,6 +109,8 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
             agent_goal_loc.tolist(),
             _map
         )
+        dx = 1 if dx > 0 else -1 if dx < 0 else 0
+        dy = 1 if dy > 0 else -1 if dy < 0 else 0
         # normalize
         # norm = (dx ** 2 + dy ** 2) ** 0.5
         # dx = dx / norm if norm > 0 else 0
@@ -218,7 +220,6 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
     
     for step in range(100):
-        print(f"step: {step}")
         current_feature, current_mask, current_loc, current_loc_tuple = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \
