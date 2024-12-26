@@ -46,7 +46,7 @@ def calculate_minimum_distance(current_agent_location, goal_agent_location, map_
                         f_score = tentative_g + manhattan_distance(next_pos, goal)
                         heapq.heappush(open_set, (f_score, tentative_g, next_pos))
 
-        return 10000  # No path found
+        return 128  # No path found
 
     return a_star(current_agent_location, goal_agent_location, map_info)
 
@@ -142,7 +142,7 @@ class MAPFDataset(Dataset):
         goal = tuple(goal)
         
         # Directly look up in the dictionary
-        return self.all_distance_maps[map_name].get((start, goal), 10000)
+        return self.all_distance_maps[map_name].get((start, goal), 128)
     
     def read_map(self, map_name):
         map_path = f"map_file/{map_name}"
@@ -195,27 +195,27 @@ class MAPFDataset(Dataset):
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
             dx = self.get_distance(
-                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
+                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
                 goal_agent_locations[i],
                 map_name
             ) - self.get_distance(
-                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
+                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
                 goal_agent_locations[i],
                 map_name
             )
             dy = self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
                 goal_agent_locations[i],
                 map_name
             ) - self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
                 goal_agent_locations[i],
                 map_name
             )
             # normalize
-            norm = (dx ** 2 + dy ** 2) ** 0.5
-            dx = dx / norm if norm > 0 else 0
-            dy = dy / norm if norm > 0 else 0
+            # norm = (dx ** 2 + dy ** 2) ** 0.5
+            # dx = dx / norm if norm > 0 else 0
+            # dy = dy / norm if norm > 0 else 0
             # x = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
             # y = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
             # norm = (x ** 2 + y ** 2) ** 0.5

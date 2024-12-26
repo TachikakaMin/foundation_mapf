@@ -92,27 +92,27 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_idx = int(agent_idx)
         agent_goal_loc = goal_loc_dict[agent_idx]
         dx = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
+            (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
             _map
         ) - calculate_minimum_distance(
-            (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
+            (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
             _map
         )
         dy = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
+            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
             agent_goal_loc.tolist(),
             _map
         ) - calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
+            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
             agent_goal_loc.tolist(),
             _map
         )
         # normalize
-        norm = (dx ** 2 + dy ** 2) ** 0.5
-        dx = dx / norm if norm > 0 else 0
-        dy = dy / norm if norm > 0 else 0
+        # norm = (dx ** 2 + dy ** 2) ** 0.5
+        # dx = dx / norm if norm > 0 else 0
+        # dy = dy / norm if norm > 0 else 0
         # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
         # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
         feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
