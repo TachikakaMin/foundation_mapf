@@ -139,7 +139,6 @@ def move_agent(agent_num, current_locs, action, _map):
     m = _map.shape[1]
     action = action.detach().cpu().numpy() # shape:[n, m]
     tmp_current_locs = 1 * current_locs
-    collision_flag = False
     # 遍历每个智能体，根据动作更新其位置
     for i in range(agent_num):
         location = tmp_current_locs[i]
@@ -158,7 +157,7 @@ def move_agent(agent_num, current_locs, action, _map):
     
     # 处理智能体之间的碰撞
     while True:
-        collision_count = 0
+        collision_flag = False
         map_mark = 1 * _map  # 创建占位地图
         for i in range(agent_num):
             location = tmp_current_locs[i]
