@@ -98,7 +98,8 @@ if __name__ == "__main__":
     args_str = '\n'.join([f'{key}: {value}' for key, value in args_dict.items()])  # 转换为字符串
 
     args.writer.add_text('Args', args_str, 0)
-        
+    
+    random.seed(args.seed)
     torch.manual_seed(args.seed)  # Set seed for torch
     np.random.seed(args.seed)     # Set seed for numpy
     if torch.cuda.is_available():
