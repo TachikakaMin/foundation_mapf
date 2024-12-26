@@ -223,8 +223,8 @@ class MAPFDataset(Dataset):
             # y = y / norm if norm > 0 else 0
             # feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = x
             # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = y
-            dx = 1 if dx > 0 else -1 if dx < 0 else 0
-            dy = 1 if dy > 0 else -1 if dy < 0 else 0
+            # dx = 1 if dx > 0 else -1 if dx < 0 else 0
+            # dy = 1 if dy > 0 else -1 if dy < 0 else 0
             feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
             feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
             feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = self.get_distance(

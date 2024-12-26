@@ -109,8 +109,8 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
             agent_goal_loc.tolist(),
             _map
         )
-        dx = 1 if dx > 0 else -1 if dx < 0 else 0
-        dy = 1 if dy > 0 else -1 if dy < 0 else 0
+        # dx = 1 if dx > 0 else -1 if dx < 0 else 0
+        # dy = 1 if dy > 0 else -1 if dy < 0 else 0
         # normalize
         # norm = (dx ** 2 + dy ** 2) ** 0.5
         # dx = dx / norm if norm > 0 else 0
