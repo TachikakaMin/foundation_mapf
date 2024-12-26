@@ -216,11 +216,21 @@ class MAPFDataset(Dataset):
             norm = (dx ** 2 + dy ** 2) ** 0.5
             dx = dx / norm if norm > 0 else 0
             dy = dy / norm if norm > 0 else 0
-            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
-            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
-            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
-            feature[6, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
-            feature[7, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
+            # x = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
+            # y = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
+            # norm = (x ** 2 + y ** 2) ** 0.5
+            # x = x / norm if norm > 0 else 0
+            # y = y / norm if norm > 0 else 0
+            # feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = x
+            # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = y
+            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
+            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
+            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = self.get_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_name
+            )
+            # feature[7, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
             # feature[8, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
             # feature[9, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
             # feature[10, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1

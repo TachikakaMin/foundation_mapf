@@ -114,11 +114,17 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         norm = (dx ** 2 + dy ** 2) ** 0.5
         dx = dx / norm if norm > 0 else 0
         dy = dy / norm if norm > 0 else 0
-        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
-        feature[6, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
-    feature[7] = last_loc_1
+        # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
+        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
+        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
+        distance_to_goal = calculate_minimum_distance(
+            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()),
+            agent_goal_loc.tolist(),
+            _map
+        )
+        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
+    # feature[7] = last_loc_1
     # feature[8] = last_loc_2
     # feature[9] = last_loc_3
     # feature[10] = last_loc_4
