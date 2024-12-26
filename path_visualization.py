@@ -91,39 +91,53 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
         agent_idx = int(agent_idx)
         agent_goal_loc = goal_loc_dict[agent_idx]
-        dx = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
-            agent_goal_loc.tolist(),
-            _map
-        ) - calculate_minimum_distance(
-            (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
-            agent_goal_loc.tolist(),
-            _map
-        )
-        dy = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
-            agent_goal_loc.tolist(),
-            _map
-        ) - calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
-            agent_goal_loc.tolist(),
-            _map
-        )
-        # dx = 1 if dx > 0 else -1 if dx < 0 else 0
-        # dy = 1 if dy > 0 else -1 if dy < 0 else 0
-        # normalize
-        # norm = (dx ** 2 + dy ** 2) ** 0.5
-        # dx = dx / norm if norm > 0 else 0
-        # dy = dy / norm if norm > 0 else 0
-        # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
-        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
         distance_to_goal = calculate_minimum_distance(
             (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
             _map
         )
+        left_distance = calculate_minimum_distance(
+            (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
+            agent_goal_loc.tolist(),
+            _map
+        )
+        right_distance = calculate_minimum_distance(
+            (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
+            agent_goal_loc.tolist(),
+            _map
+        )
+        down_distance = calculate_minimum_distance(
+            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
+            agent_goal_loc.tolist(),
+            _map
+        )
+        up_distance = calculate_minimum_distance(
+            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
+            agent_goal_loc.tolist(),
+            _map
+        )
+        if left_distance > 0 and right_distance > 0:
+            dx = 0
+        elif left_distance > 0 and right_distance < 0:
+            dx = 1
+        elif left_distance < 0 and right_distance > 0:
+            dx = -1
+        else:
+            dx = 1
+        if down_distance > 0 and up_distance > 0:
+            dy = 0
+        elif down_distance > 0 and up_distance < 0:
+            dy = 1
+        elif down_distance < 0 and up_distance > 0:
+            dy = -1
+        else:
+            dy = 1
+
+        # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
+        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
+        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
+
         feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
     # feature[7] = last_loc_1
     # feature[8] = last_loc_2

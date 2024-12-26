@@ -194,44 +194,56 @@ class MAPFDataset(Dataset):
         for i in range(current_agent_locations.shape[0]):
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
-            dx = self.get_distance(
-                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
-                goal_agent_locations[i],
-                map_name
-            ) - self.get_distance(
-                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
-                goal_agent_locations[i],
-                map_name
-            )
-            dy = self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
-                goal_agent_locations[i],
-                map_name
-            ) - self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
-                goal_agent_locations[i],
-                map_name
-            )
-            # normalize
-            # norm = (dx ** 2 + dy ** 2) ** 0.5
-            # dx = dx / norm if norm > 0 else 0
-            # dy = dy / norm if norm > 0 else 0
-            # x = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
-            # y = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
-            # norm = (x ** 2 + y ** 2) ** 0.5
-            # x = x / norm if norm > 0 else 0
-            # y = y / norm if norm > 0 else 0
-            # feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = x
-            # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = y
-            # dx = 1 if dx > 0 else -1 if dx < 0 else 0
-            # dy = 1 if dy > 0 else -1 if dy < 0 else 0
-            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
-            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
-            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = self.get_distance(
+            distance_to_goal = self.get_distance(
                 (current_agent_locations[i, 0], current_agent_locations[i, 1]),
                 goal_agent_locations[i],
                 map_name
             )
+            left_distance = self.get_distance(
+                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal
+            right_distance = self.get_distance(
+                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal    
+            down_distance = self.get_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal
+            up_distance = self.get_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal
+
+            # x = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
+            # y = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
+            # feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = x
+            # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = y
+            if left_distance > 0 and right_distance > 0:
+                dx = 0
+            elif left_distance > 0 and right_distance < 0:
+                dx = 1
+            elif left_distance < 0 and right_distance > 0:
+                dx = -1
+            else:
+                dx = 1
+            if down_distance > 0 and up_distance > 0:
+                dy = 0
+            elif down_distance > 0 and up_distance < 0:
+                dy = 1
+            elif down_distance < 0 and up_distance > 0:
+                dy = -1
+            else:
+                dy = 1
+            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
+            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
+
+            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = distance_to_goal
             # feature[7, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
             # feature[8, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
             # feature[9, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
