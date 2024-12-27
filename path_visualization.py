@@ -122,17 +122,17 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         if left_distance > 0 and right_distance > 0:
             dx = 0
         elif left_distance > 0 and right_distance < 0:
-            dx = 1
-        elif left_distance < 0 and right_distance > 0:
             dx = -1
+        elif left_distance < 0 and right_distance > 0:
+            dx = 1
         else:
             dx = 1
         if down_distance > 0 and up_distance > 0:
             dy = 0
         elif down_distance > 0 and up_distance < 0:
-            dy = 1
-        elif down_distance < 0 and up_distance > 0:
             dy = -1
+        elif down_distance < 0 and up_distance > 0:
+            dy = 1
         else:
             dy = 1
 

@@ -228,17 +228,17 @@ class MAPFDataset(Dataset):
             if left_distance > 0 and right_distance > 0:
                 dx = 0
             elif left_distance > 0 and right_distance < 0:
-                dx = 1
-            elif left_distance < 0 and right_distance > 0:
                 dx = -1
+            elif left_distance < 0 and right_distance > 0:
+                dx = 1
             else:
                 dx = 1
             if down_distance > 0 and up_distance > 0:
                 dy = 0
             elif down_distance > 0 and up_distance < 0:
-                dy = 1
-            elif down_distance < 0 and up_distance > 0:
                 dy = -1
+            elif down_distance < 0 and up_distance > 0:
+                dy = 1
             else:
                 dy = 1
             feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
