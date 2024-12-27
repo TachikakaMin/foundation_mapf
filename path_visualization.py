@@ -103,22 +103,22 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
             (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
             _map
-        )
+        ) - distance_to_goal
         right_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
             _map
-        )
+        ) - distance_to_goal
         down_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
             agent_goal_loc.tolist(),
             _map
-        )
+        ) - distance_to_goal
         up_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
             agent_goal_loc.tolist(),
             _map
-        )
+        ) - distance_to_goal
         if left_distance > 0 and right_distance > 0:
             dx = 0
         elif left_distance > 0 and right_distance < 0:
@@ -136,10 +136,10 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         else:
             dy = 1
 
-        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
-        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
+        # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
+        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
+        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
 
         feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
     # feature[7] = last_loc_1

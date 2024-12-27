@@ -241,8 +241,8 @@ class MAPFDataset(Dataset):
                 dy = 1
             else:
                 dy = 1
-            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
-            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
+            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
+            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
 
             feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = distance_to_goal
             # feature[7, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
