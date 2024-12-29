@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import tqdm
 from args import get_args
 from models.unet import UNet
+from models.CNN import CNN
 from data_preprocess.datasetMAPF import MAPFDataset
 from evaluation import evaluate_valid_loss
 from path_visualization import path_formation, animate_paths
@@ -108,7 +109,10 @@ if __name__ == "__main__":
     
     # model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, bilinear=False)
+    if args.model == "unet":
+        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, bilinear=False)
+    elif args.model == "cnn":
+        net = CNN(n_channels=args.feature_dim, n_classes=args.action_dim)
     
     # 计算可训练参数的总数
     total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)

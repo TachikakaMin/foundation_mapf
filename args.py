@@ -27,6 +27,7 @@ def get_args():
     parser.add_argument('--feature_dim', '-fd', metavar='FD', type=int, default=5, 
                         help='feature dimension')
     parser.add_argument('--action_dim', '-ad', metavar='AD', type=int, default=5, help='Action types')
+    parser.add_argument('--model', '-m', type=str, default="unet", help='Model type')
     return parser.parse_args()
 
 
