@@ -227,6 +227,7 @@ def move_agent(agent_num, current_locs, action, _map, temperature):
     for i in range(agent_num):
         if collision_flag_per_agent[i] is False:
             temperature[i] -= 1
+            temperature = max(temperature[i], 1)
     return tmp_current_locs, temperature
 
 
