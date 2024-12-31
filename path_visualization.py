@@ -224,9 +224,9 @@ def move_agent(agent_num, current_locs, action, _map, temperature):
                 collision_flag_per_agent[agent_other] = True
         if not collision_flag:
             break
-        for i in range(agent_num):
-            if collision_flag_per_agent[i] is False:
-                temperature[i] = 1
+    for i in range(agent_num):
+        if collision_flag_per_agent[i] is False:
+            temperature[i] -= 1
     return tmp_current_locs, temperature
 
 
@@ -254,7 +254,7 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     # 用于存储每个智能体在每个步骤的位置，添加初始位置
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
     temperature = [1.0] * agent_num
-    for step in range(100):
+    for step in range(300):
         current_feature, current_mask, current_loc, current_loc_tuple, temperature = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \
