@@ -46,7 +46,7 @@ def sample_agent_information(args, val_loader, a, b):
 
 def sample_agent_action_update(model, feature, agent_num, _map, \
                             curr_mask, current_loc, current_loc_tuple, \
-                                goal_loc, goal_loc_dict, device, action_choice="max"):
+                                goal_loc, goal_loc_dict, device, action_choice, temperature):
     model.eval()
     m, n = curr_mask.shape
     curr_mask = curr_mask.to(device)
@@ -56,8 +56,18 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
     
     # 选择概率最高的动作
     if action_choice == "sample":
-        # Sample directly from logits without temperature scaling
-        probs = torch.softmax(logits[0].permute(1, 2, 0).contiguous().view(-1, logits.shape[1]), dim=-1)
+        # Get logits in the right shape
+        logits_reshaped = logits[0].permute(1, 2, 0).contiguous()  # shape: [m, n, action_dim]
+        
+        # Apply temperature scaling only at agent positions
+        for i in range(agent_num):
+            current_x = current_loc_tuple[i][0]
+            current_y = current_loc_tuple[i][1]
+            # Scale logits for this agent's position by its temperature
+            logits_reshaped[current_x, current_y] = logits_reshaped[current_x, current_y] / temperature[i]
+        
+        # Convert to probabilities and sample
+        probs = torch.softmax(logits_reshaped.view(-1, logits.shape[1]), dim=-1)
         sampled_actions = torch.multinomial(probs, num_samples=1)
         pred = sampled_actions.view(pred.shape[2], pred.shape[3])    
     else:
@@ -66,7 +76,7 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
     
     # 更新智能体的tuple位置
     fix_current_loc_tuple = 1 * current_loc_tuple
-    current_loc_tuple = move_agent(agent_num, current_loc_tuple, action, _map)
+    current_loc_tuple, temperature = move_agent(agent_num, current_loc_tuple, action, _map, temperature)
     
     # 更新智能体的位置（用于模型输入）
     fix_current_loc = 1 * current_loc
@@ -149,10 +159,10 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
     curr_mask = (current_loc > 0)
 
-    return feature, curr_mask, current_loc, current_loc_tuple
+    return feature, curr_mask, current_loc, current_loc_tuple, temperature
 
 
-def move_agent(agent_num, current_locs, action, _map):
+def move_agent(agent_num, current_locs, action, _map, temperature):
     n = _map.shape[0]
     m = _map.shape[1]
     action = action.detach().cpu().numpy() # shape:[n, m]
@@ -173,6 +183,7 @@ def move_agent(agent_num, current_locs, action, _map):
 
         tmp_current_locs[i] = location
     
+    collision_flag_per_agent = [False] * agent_num
     # 处理智能体之间的碰撞
     while True:
         collision_flag = False
@@ -188,7 +199,8 @@ def move_agent(agent_num, current_locs, action, _map):
                     map_mark[location[0], location[1]] -= 1
                     tmp_current_locs[i] = current_locs[i]
                     collision_flag = True
-
+                    collision_flag_per_agent[i] = True
+                    temperature[i] += 1
 
         # Check position swaps
         swap_dict = {}
@@ -206,9 +218,16 @@ def move_agent(agent_num, current_locs, action, _map):
                 swap_dict.pop((loc1, loc2))
                 swap_dict.pop((loc2, loc1))
                 collision_flag = True
+                temperature[agent] += 1
+                temperature[agent_other] += 1
+                collision_flag_per_agent[agent] = True
+                collision_flag_per_agent[agent_other] = True
         if not collision_flag:
             break
-    return tmp_current_locs
+        for i in range(agent_num):
+            if collision_flag_per_agent[i] is False:
+                temperature[i] = 1
+    return tmp_current_locs, temperature
 
 
 def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic):
@@ -234,12 +253,12 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     
     # 用于存储每个智能体在每个步骤的位置，添加初始位置
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
-    
+    temperature = [1.0] * agent_num
     for step in range(100):
-        current_feature, current_mask, current_loc, current_loc_tuple = sample_agent_action_update(
+        current_feature, current_mask, current_loc, current_loc_tuple, temperature = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \
-                    goal_loc, goal_loc_dict, device, action_choice
+                    goal_loc, goal_loc_dict, device, action_choice, temperature
         )
         # 记录当前步骤每个智能体的位置
         for i in range(agent_num):
