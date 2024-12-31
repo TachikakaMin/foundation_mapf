@@ -141,7 +141,7 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
 
         feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
-    # feature[7] = last_loc_1
+    feature[6] = last_loc_1
     # feature[8] = last_loc_2
     # feature[9] = last_loc_3
     # feature[10] = last_loc_4
