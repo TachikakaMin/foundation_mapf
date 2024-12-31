@@ -186,10 +186,10 @@ class MAPFDataset(Dataset):
         current_agent_locations = agent_locations[:, idx, :2]
         goal_agent_locations = agent_locations[:, -1, :2]
         last_agent_locations_1 = agent_locations[:, idx-1, :2] if idx > 0 else current_agent_locations
-        # last_agent_locations_2 = agent_locations[:, idx-2, :2] if idx > 1 else last_agent_locations_1
-        # last_agent_locations_3 = agent_locations[:, idx-3, :2] if idx > 2 else last_agent_locations_2
-        # last_agent_locations_4 = agent_locations[:, idx-4, :2] if idx > 3 else last_agent_locations_3
-        # last_agent_locations_5 = agent_locations[:, idx-5, :2] if idx > 4 else last_agent_locations_4
+        last_agent_locations_2 = agent_locations[:, idx-2, :2] if idx > 1 else last_agent_locations_1
+        last_agent_locations_3 = agent_locations[:, idx-3, :2] if idx > 2 else last_agent_locations_2
+        last_agent_locations_4 = agent_locations[:, idx-4, :2] if idx > 3 else last_agent_locations_3
+        last_agent_locations_5 = agent_locations[:, idx-5, :2] if idx > 4 else last_agent_locations_4
 
         for i in range(current_agent_locations.shape[0]):
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
@@ -245,10 +245,10 @@ class MAPFDataset(Dataset):
 
             feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = distance_to_goal
             feature[6, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
-            # feature[8, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
-            # feature[9, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
-            # feature[10, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1
-            # feature[11, last_agent_locations_5[i, 0], last_agent_locations_5[i, 1]] = i+1
+            feature[7, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
+            feature[8, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
+            feature[9, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1
+            feature[10, last_agent_locations_5[i, 0], last_agent_locations_5[i, 1]] = i+1
 
         action_info = torch.zeros((m, n), dtype=torch.long)
         next_agent_locations = agent_locations[:, idx+1, :2]

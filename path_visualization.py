@@ -91,10 +91,10 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
 
     last_loc_1 = feature[1]
-    # last_loc_2 = feature[5]
-    # last_loc_3 = feature[6]
-    # last_loc_4 = feature[7]
-    # last_loc_5 = feature[8]
+    last_loc_2 = feature[5]
+    last_loc_3 = feature[6]
+    last_loc_4 = feature[7]
+    last_loc_5 = feature[8]
     feature = torch.zeros_like(feature)
     feature[0] = _map
     feature[1] = current_loc
@@ -152,10 +152,10 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
         feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
     feature[6] = last_loc_1
-    # feature[8] = last_loc_2
-    # feature[9] = last_loc_3
-    # feature[10] = last_loc_4
-    # feature[11] = last_loc_5
+    feature[7] = last_loc_2
+    feature[8] = last_loc_3
+    feature[9] = last_loc_4
+    feature[10] = last_loc_5
 
     curr_mask = (current_loc > 0)
 
