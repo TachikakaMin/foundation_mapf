@@ -186,44 +186,53 @@ class MAPFDataset(Dataset):
         current_agent_locations = agent_locations[:, idx, :2]
         goal_agent_locations = agent_locations[:, -1, :2]
         last_agent_locations_1 = agent_locations[:, idx-1, :2] if idx > 0 else current_agent_locations
-        last_agent_locations_2 = agent_locations[:, idx-2, :2] if idx > 1 else last_agent_locations_1
-        last_agent_locations_3 = agent_locations[:, idx-3, :2] if idx > 2 else last_agent_locations_2
-        last_agent_locations_4 = agent_locations[:, idx-4, :2] if idx > 3 else last_agent_locations_3
-        last_agent_locations_5 = agent_locations[:, idx-5, :2] if idx > 4 else last_agent_locations_4
+        # last_agent_locations_2 = agent_locations[:, idx-2, :2] if idx > 1 else last_agent_locations_1
+        # last_agent_locations_3 = agent_locations[:, idx-3, :2] if idx > 2 else last_agent_locations_2
+        # last_agent_locations_4 = agent_locations[:, idx-4, :2] if idx > 3 else last_agent_locations_3
+        # last_agent_locations_5 = agent_locations[:, idx-5, :2] if idx > 4 else last_agent_locations_4
 
         for i in range(current_agent_locations.shape[0]):
             feature[1, current_agent_locations[i, 0], current_agent_locations[i, 1]] = i+1
             feature[2, goal_agent_locations[i, 0], goal_agent_locations[i, 1]] = i+1
-            distance_to_goal = self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]),
-                goal_agent_locations[i],
-                map_name
-            )
-            left_distance = self.get_distance(
-                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
-                goal_agent_locations[i],
-                map_name
-            ) - distance_to_goal
-            right_distance = self.get_distance(
-                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
-                goal_agent_locations[i],
-                map_name
-            ) - distance_to_goal    
-            down_distance = self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
-                goal_agent_locations[i],
-                map_name
-            ) - distance_to_goal
-            up_distance = self.get_distance(
-                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
-                goal_agent_locations[i],
-                map_name
-            ) - distance_to_goal
+            feature[3, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
 
             # x = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
             # y = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
             # feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = x
             # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = y
+            # feature[7, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
+            # feature[8, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
+            # feature[9, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1
+            # feature[10, last_agent_locations_5[i, 0], last_agent_locations_5[i, 1]] = i+1
+
+        for i in range(current_agent_locations.shape[0]):
+            distance_to_goal = calculate_minimum_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_info
+            )
+            left_distance = calculate_minimum_distance(
+                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_info
+            ) - distance_to_goal
+            right_distance = calculate_minimum_distance(
+                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_info
+            ) - distance_to_goal    
+            down_distance = calculate_minimum_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
+                goal_agent_locations[i],
+                map_info
+            ) - distance_to_goal
+            up_distance = calculate_minimum_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
+                goal_agent_locations[i],
+                map_info
+            ) - distance_to_goal
+
+
             if left_distance > 0 and right_distance > 0:
                 dx = 0
             elif left_distance > 0 and right_distance < 0:
@@ -240,15 +249,9 @@ class MAPFDataset(Dataset):
                 dy = 1
             else:
                 dy = 1
-            feature[3, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
-            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
-
-            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = distance_to_goal
-            feature[6, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
-            feature[7, last_agent_locations_2[i, 0], last_agent_locations_2[i, 1]] = i+1
-            feature[8, last_agent_locations_3[i, 0], last_agent_locations_3[i, 1]] = i+1
-            feature[9, last_agent_locations_4[i, 0], last_agent_locations_4[i, 1]] = i+1
-            feature[10, last_agent_locations_5[i, 0], last_agent_locations_5[i, 1]] = i+1
+            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
+            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
+            feature[6, current_agent_locations[i, 0], current_agent_locations[i, 1]] = distance_to_goal
 
         action_info = torch.zeros((m, n), dtype=torch.long)
         next_agent_locations = agent_locations[:, idx+1, :2]

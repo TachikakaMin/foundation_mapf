@@ -91,14 +91,16 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
 
     last_loc_1 = feature[1]
-    last_loc_2 = feature[5]
-    last_loc_3 = feature[6]
-    last_loc_4 = feature[7]
-    last_loc_5 = feature[8]
+    # last_loc_2 = feature[5]
+    # last_loc_3 = feature[6]
+    # last_loc_4 = feature[7]
+    # last_loc_5 = feature[8]
     feature = torch.zeros_like(feature)
     feature[0] = _map
     feature[1] = current_loc
     feature[2] = goal_loc
+    feature[3] = last_loc_1
+
     for i in range(agent_num):
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
         agent_idx = int(agent_idx)
@@ -106,27 +108,27 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         distance_to_goal = calculate_minimum_distance(
             (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
-            _map
+            _map + current_loc
         )
         left_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
-            _map
+            _map + current_loc
         ) - distance_to_goal
         right_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
             agent_goal_loc.tolist(),
-            _map
+            _map + current_loc
         ) - distance_to_goal
         down_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
             agent_goal_loc.tolist(),
-            _map
+            _map + current_loc
         ) - distance_to_goal
         up_distance = calculate_minimum_distance(
             (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
             agent_goal_loc.tolist(),
-            _map
+            _map + current_loc
         ) - distance_to_goal
         if left_distance > 0 and right_distance > 0:
             dx = 0
@@ -147,15 +149,14 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
         # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
         # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
+        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
 
-        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
-    feature[6] = last_loc_1
-    feature[7] = last_loc_2
-    feature[8] = last_loc_3
-    feature[9] = last_loc_4
-    feature[10] = last_loc_5
+        feature[6, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
+    # feature[7] = last_loc_2
+    # feature[8] = last_loc_3
+    # feature[9] = last_loc_4
+    # feature[10] = last_loc_5
 
     curr_mask = (current_loc > 0)
 
@@ -226,7 +227,7 @@ def move_agent(agent_num, current_locs, action, _map, temperature):
             break
     for i in range(agent_num):
         if collision_flag_per_agent[i] is False:
-            temperature[i] -= 1
+            temperature[i] -= 2
             temperature[i] = max(temperature[i], 1)
     return tmp_current_locs, temperature
 
