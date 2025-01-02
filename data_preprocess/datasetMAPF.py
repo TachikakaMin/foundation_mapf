@@ -11,6 +11,11 @@ from numba import jit
 
 @jit(nopython=True)
 def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
+    # Move input coordinates to GPU and ensure they're tensors
+    device = map_info.device
+    current_agent_location = torch.tensor(current_agent_location, device=device, dtype=torch.int32)
+    goal_agent_location = torch.tensor(goal_agent_location, device=device, dtype=torch.int32)
+    
     # Early return for same positions
     if current_agent_location[0] == goal_agent_location[0] and current_agent_location[1] == goal_agent_location[1]:
         return 0
@@ -26,17 +31,17 @@ def calculate_minimum_distance(current_agent_location, goal_agent_location, map_
         return 128
 
     # Initialize data structures
-    visited = np.zeros((rows, cols), dtype=np.bool_)
-    g_scores = np.full((rows, cols), np.inf)
+    visited = torch.zeros((rows, cols), dtype=torch.bool, device=device)
+    g_scores = torch.full((rows, cols), float('inf'), device=device)
     g_scores[current_agent_location[0], current_agent_location[1]] = 0
     
-    # Priority queue simulation using arrays
+    # Priority queue simulation using tensors
     queue_size = rows * cols
-    queue_len = 0
-    queue_f = np.full(queue_size, np.inf)
-    queue_g = np.full(queue_size, np.inf)
-    queue_x = np.zeros(queue_size, dtype=np.int32)
-    queue_y = np.zeros(queue_size, dtype=np.int32)
+    queue_len = torch.tensor([1], device=device)
+    queue_f = torch.full((queue_size,), float('inf'), device=device)
+    queue_g = torch.full((queue_size,), float('inf'), device=device)
+    queue_x = torch.zeros(queue_size, dtype=torch.int32, device=device)
+    queue_y = torch.zeros(queue_size, dtype=torch.int32, device=device)
     
     # Add start node
     f_start = abs(current_agent_location[0] - goal_agent_location[0]) + abs(current_agent_location[1] - goal_agent_location[1])
@@ -44,19 +49,12 @@ def calculate_minimum_distance(current_agent_location, goal_agent_location, map_
     queue_g[0] = 0
     queue_x[0] = current_agent_location[0]
     queue_y[0] = current_agent_location[1]
-    queue_len = 1
 
-    directions = np.array([(0, 1), (0, -1), (-1, 0), (1, 0)])
+    directions = torch.tensor([[0, 1], [0, -1], [-1, 0], [1, 0]], device=device)
 
     while queue_len > 0:
         # Find minimum f_score in queue
-        min_idx = 0
-        min_f = queue_f[0]
-        for i in range(1, queue_len):
-            if queue_f[i] < min_f:
-                min_f = queue_f[i]
-                min_idx = i
-        
+        min_idx = torch.argmin(queue_f[:queue_len])
         current_x = queue_x[min_idx]
         current_y = queue_y[min_idx]
         current_g = queue_g[min_idx]
@@ -69,32 +67,46 @@ def calculate_minimum_distance(current_agent_location, goal_agent_location, map_
         queue_y[min_idx] = queue_y[queue_len]
         
         if current_x == goal_agent_location[0] and current_y == goal_agent_location[1]:
-            return int(current_g)
+            return int(current_g.cpu().item())
             
         if visited[current_x, current_y]:
             continue
             
         visited[current_x, current_y] = True
         
-        for dx, dy in directions:
-            next_x = current_x + dx
-            next_y = current_y + dy
+        # Generate next positions using tensor operations
+        next_x = current_x + directions[:, 0]
+        next_y = current_y + directions[:, 1]
+        
+        # Filter valid moves
+        valid_moves = (
+            (next_x >= 0) & (next_x < rows) &
+            (next_y >= 0) & (next_y < cols) &
+            ~visited[next_x, next_y] &
+            (map_info[next_x, next_y] == 0)
+        )
+        
+        next_x = next_x[valid_moves]
+        next_y = next_y[valid_moves]
+        
+        if len(next_x) > 0:
+            tentative_g = current_g + 1
             
-            if (0 <= next_x < rows and 0 <= next_y < cols and 
-                not visited[next_x, next_y] and map_info[next_x, next_y] == 0):
+            better_path = tentative_g < g_scores[next_x, next_y]
+            next_x = next_x[better_path]
+            next_y = next_y[better_path]
+            
+            if len(next_x) > 0:
+                g_scores[next_x, next_y] = tentative_g
+                f_scores = tentative_g + torch.abs(next_x - goal_agent_location[0]) + torch.abs(next_y - goal_agent_location[1])
                 
-                tentative_g = current_g + 1
-                
-                if tentative_g < g_scores[next_x, next_y]:
-                    g_scores[next_x, next_y] = tentative_g
-                    f_score = tentative_g + abs(next_x - goal_agent_location[0]) + abs(next_y - goal_agent_location[1])
-                    
-                    if queue_len < queue_size:
-                        queue_f[queue_len] = f_score
-                        queue_g[queue_len] = tentative_g
-                        queue_x[queue_len] = next_x
-                        queue_y[queue_len] = next_y
-                        queue_len += 1
+                # Add to queue
+                queue_indices = torch.arange(queue_len, queue_len + len(next_x), device=device)
+                queue_f[queue_indices] = f_scores
+                queue_g[queue_indices] = tentative_g
+                queue_x[queue_indices] = next_x
+                queue_y[queue_indices] = next_y
+                queue_len += len(next_x)
 
     return 128  # No path found
 
