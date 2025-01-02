@@ -7,9 +7,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 import h5py
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from numba import jit
 
-@jit(nopython=True)
 def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
     # Move input coordinates to GPU and ensure they're tensors
     device = map_info.device
@@ -78,16 +76,27 @@ def calculate_minimum_distance(current_agent_location, goal_agent_location, map_
         next_x = current_x + directions[:, 0]
         next_y = current_y + directions[:, 1]
         
-        # Filter valid moves
+        # Filter valid moves - ensure strict bounds checking
         valid_moves = (
-            (next_x >= 0) & (next_x < rows) &
-            (next_y >= 0) & (next_y < cols) &
-            ~visited[next_x, next_y] &
-            (map_info[next_x, next_y] == 0)
+            (next_x >= 0) & 
+            (next_x < rows) &
+            (next_y >= 0) & 
+            (next_y < cols)
         )
         
+        # Apply bounds filter first
         next_x = next_x[valid_moves]
         next_y = next_y[valid_moves]
+        
+        # Then check other conditions only for valid coordinates
+        if len(next_x) > 0:
+            valid_moves = (
+                ~visited[next_x, next_y] &
+                (map_info[next_x, next_y] == 0)
+            )
+            
+            next_x = next_x[valid_moves]
+            next_y = next_y[valid_moves]
         
         if len(next_x) > 0:
             tentative_g = current_g + 1
@@ -100,12 +109,14 @@ def calculate_minimum_distance(current_agent_location, goal_agent_location, map_
                 g_scores[next_x, next_y] = tentative_g
                 f_scores = tentative_g + torch.abs(next_x - goal_agent_location[0]) + torch.abs(next_y - goal_agent_location[1])
                 
-                # Add to queue
-                queue_indices = torch.arange(queue_len, queue_len + len(next_x), device=device)
+                # Convert queue_len to integer for arange
+                start = int(queue_len.item())
+                end = start + len(next_x)
+                queue_indices = torch.arange(start, end, device=device)
                 queue_f[queue_indices] = f_scores
                 queue_g[queue_indices] = tentative_g
-                queue_x[queue_indices] = next_x
-                queue_y[queue_indices] = next_y
+                queue_x[queue_indices] = next_x.to(torch.int)
+                queue_y[queue_indices] = next_y.to(torch.int)
                 queue_len += len(next_x)
 
     return 128  # No path found
