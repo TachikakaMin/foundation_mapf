@@ -7,119 +7,48 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 import h5py
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import heapq
 
 def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
-    # Move input coordinates to GPU and ensure they're tensors
-    device = map_info.device
-    current_agent_location = torch.tensor(current_agent_location, device=device, dtype=torch.int32)
-    goal_agent_location = torch.tensor(goal_agent_location, device=device, dtype=torch.int32)
-    
-    # Early return for same positions
-    if current_agent_location[0] == goal_agent_location[0] and current_agent_location[1] == goal_agent_location[1]:
-        return 0
-    
-    # Quick boundary check
-    rows, cols = map_info.shape
-    if (not 0 <= current_agent_location[0] < rows or 
-        not 0 <= current_agent_location[1] < cols or
-        not 0 <= goal_agent_location[0] < rows or 
-        not 0 <= goal_agent_location[1] < cols or
-        map_info[current_agent_location[0], current_agent_location[1]] == 1 or 
-        map_info[goal_agent_location[0], goal_agent_location[1]] == 1):
-        return 128
+    def manhattan_distance(p1, p2):
+        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
-    # Initialize data structures
-    visited = torch.zeros((rows, cols), dtype=torch.bool, device=device)
-    g_scores = torch.full((rows, cols), float('inf'), device=device)
-    g_scores[current_agent_location[0], current_agent_location[1]] = 0
-    
-    # Priority queue simulation using tensors
-    queue_size = rows * cols
-    queue_len = torch.tensor([1], device=device)
-    queue_f = torch.full((queue_size,), float('inf'), device=device)
-    queue_g = torch.full((queue_size,), float('inf'), device=device)
-    queue_x = torch.zeros(queue_size, dtype=torch.int32, device=device)
-    queue_y = torch.zeros(queue_size, dtype=torch.int32, device=device)
-    
-    # Add start node
-    f_start = abs(current_agent_location[0] - goal_agent_location[0]) + abs(current_agent_location[1] - goal_agent_location[1])
-    queue_f[0] = f_start
-    queue_g[0] = 0
-    queue_x[0] = current_agent_location[0]
-    queue_y[0] = current_agent_location[1]
+    def a_star(start, goal, grid):
+        if tuple(start) == tuple(goal):
+            return 0
 
-    directions = torch.tensor([[0, 1], [0, -1], [-1, 0], [1, 0]], device=device)
+        rows, cols = grid.shape
+        start = tuple(start)
+        goal = tuple(goal)
 
-    while queue_len > 0:
-        # Find minimum f_score in queue
-        min_idx = torch.argmin(queue_f[:queue_len])
-        current_x = queue_x[min_idx]
-        current_y = queue_y[min_idx]
-        current_g = queue_g[min_idx]
-        
-        # Remove from queue by swapping with last element and reducing length
-        queue_len -= 1
-        queue_f[min_idx] = queue_f[queue_len]
-        queue_g[min_idx] = queue_g[queue_len]
-        queue_x[min_idx] = queue_x[queue_len]
-        queue_y[min_idx] = queue_y[queue_len]
-        
-        if current_x == goal_agent_location[0] and current_y == goal_agent_location[1]:
-            return int(current_g.cpu().item())
-            
-        if visited[current_x, current_y]:
-            continue
-            
-        visited[current_x, current_y] = True
-        
-        # Generate next positions using tensor operations
-        next_x = current_x + directions[:, 0]
-        next_y = current_y + directions[:, 1]
-        
-        # Filter valid moves - ensure strict bounds checking
-        valid_moves = (
-            (next_x >= 0) & 
-            (next_x < rows) &
-            (next_y >= 0) & 
-            (next_y < cols)
-        )
-        
-        # Apply bounds filter first
-        next_x = next_x[valid_moves]
-        next_y = next_y[valid_moves]
-        
-        # Then check other conditions only for valid coordinates
-        if len(next_x) > 0:
-            valid_moves = (
-                ~visited[next_x, next_y] &
-                (map_info[next_x, next_y] == 0)
-            )
-            
-            next_x = next_x[valid_moves]
-            next_y = next_y[valid_moves]
-        
-        if len(next_x) > 0:
-            tentative_g = current_g + 1
-            
-            better_path = tentative_g < g_scores[next_x, next_y]
-            next_x = next_x[better_path]
-            next_y = next_y[better_path]
-            
-            if len(next_x) > 0:
-                g_scores[next_x, next_y] = tentative_g
-                f_scores = tentative_g + torch.abs(next_x - goal_agent_location[0]) + torch.abs(next_y - goal_agent_location[1])
-                
-                # Convert queue_len to integer for arange
-                start = int(queue_len.item())
-                end = start + len(next_x)
-                queue_indices = torch.arange(start, end, device=device)
-                queue_f[queue_indices] = f_scores
-                queue_g[queue_indices] = tentative_g
-                queue_x[queue_indices] = next_x.to(torch.int)
-                queue_y[queue_indices] = next_y.to(torch.int)
-                queue_len += len(next_x)
+        open_set = [(manhattan_distance(start, goal), 0, start)]
+        g_score = {start: 0}
+        visited = set()
+        directions = [(0, 1), (0, -1), (-1, 0), (1, 0)]
 
-    return 128  # No path found
+        while open_set:
+            _, current_g, current = heapq.heappop(open_set)
+            if current == goal:
+                return current_g
+
+            if current in visited:
+                continue
+            visited.add(current)
+
+            for dx, dy in directions:
+                next_pos = (current[0] + dx, current[1] + dy)
+
+                if 0 <= next_pos[0] < rows and 0 <= next_pos[1] < cols and grid[next_pos[0], next_pos[1]] == 0:
+                    tentative_g = current_g + 1
+
+                    if next_pos not in g_score or tentative_g < g_score[next_pos]:
+                        g_score[next_pos] = tentative_g
+                        f_score = tentative_g + manhattan_distance(next_pos, goal)
+                        heapq.heappush(open_set, (f_score, tentative_g, next_pos))
+
+        return 128  # No path found
+
+    return a_star(current_agent_location, goal_agent_location, map_info)
 
 def create_distance_map(map_data):
     # Get dimensions and find all accessible points
