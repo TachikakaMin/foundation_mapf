@@ -7,48 +7,96 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 import h5py
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import heapq
+from numba import jit
 
+@jit(nopython=True)
 def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
-    def manhattan_distance(p1, p2):
-        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+    # Early return for same positions
+    if current_agent_location[0] == goal_agent_location[0] and current_agent_location[1] == goal_agent_location[1]:
+        return 0
+    
+    # Quick boundary check
+    rows, cols = map_info.shape
+    if (not 0 <= current_agent_location[0] < rows or 
+        not 0 <= current_agent_location[1] < cols or
+        not 0 <= goal_agent_location[0] < rows or 
+        not 0 <= goal_agent_location[1] < cols or
+        map_info[current_agent_location[0], current_agent_location[1]] == 1 or 
+        map_info[goal_agent_location[0], goal_agent_location[1]] == 1):
+        return 128
 
-    def a_star(start, goal, grid):
-        if tuple(start) == tuple(goal):
-            return 0
+    # Initialize data structures
+    visited = np.zeros((rows, cols), dtype=np.bool_)
+    g_scores = np.full((rows, cols), np.inf)
+    g_scores[current_agent_location[0], current_agent_location[1]] = 0
+    
+    # Priority queue simulation using arrays
+    queue_size = rows * cols
+    queue_len = 0
+    queue_f = np.full(queue_size, np.inf)
+    queue_g = np.full(queue_size, np.inf)
+    queue_x = np.zeros(queue_size, dtype=np.int32)
+    queue_y = np.zeros(queue_size, dtype=np.int32)
+    
+    # Add start node
+    f_start = abs(current_agent_location[0] - goal_agent_location[0]) + abs(current_agent_location[1] - goal_agent_location[1])
+    queue_f[0] = f_start
+    queue_g[0] = 0
+    queue_x[0] = current_agent_location[0]
+    queue_y[0] = current_agent_location[1]
+    queue_len = 1
 
-        rows, cols = grid.shape
-        start = tuple(start)
-        goal = tuple(goal)
+    directions = np.array([(0, 1), (0, -1), (-1, 0), (1, 0)])
 
-        open_set = [(manhattan_distance(start, goal), 0, start)]
-        g_score = {start: 0}
-        visited = set()
-        directions = [(0, 1), (0, -1), (-1, 0), (1, 0)]
+    while queue_len > 0:
+        # Find minimum f_score in queue
+        min_idx = 0
+        min_f = queue_f[0]
+        for i in range(1, queue_len):
+            if queue_f[i] < min_f:
+                min_f = queue_f[i]
+                min_idx = i
+        
+        current_x = queue_x[min_idx]
+        current_y = queue_y[min_idx]
+        current_g = queue_g[min_idx]
+        
+        # Remove from queue by swapping with last element and reducing length
+        queue_len -= 1
+        queue_f[min_idx] = queue_f[queue_len]
+        queue_g[min_idx] = queue_g[queue_len]
+        queue_x[min_idx] = queue_x[queue_len]
+        queue_y[min_idx] = queue_y[queue_len]
+        
+        if current_x == goal_agent_location[0] and current_y == goal_agent_location[1]:
+            return int(current_g)
+            
+        if visited[current_x, current_y]:
+            continue
+            
+        visited[current_x, current_y] = True
+        
+        for dx, dy in directions:
+            next_x = current_x + dx
+            next_y = current_y + dy
+            
+            if (0 <= next_x < rows and 0 <= next_y < cols and 
+                not visited[next_x, next_y] and map_info[next_x, next_y] == 0):
+                
+                tentative_g = current_g + 1
+                
+                if tentative_g < g_scores[next_x, next_y]:
+                    g_scores[next_x, next_y] = tentative_g
+                    f_score = tentative_g + abs(next_x - goal_agent_location[0]) + abs(next_y - goal_agent_location[1])
+                    
+                    if queue_len < queue_size:
+                        queue_f[queue_len] = f_score
+                        queue_g[queue_len] = tentative_g
+                        queue_x[queue_len] = next_x
+                        queue_y[queue_len] = next_y
+                        queue_len += 1
 
-        while open_set:
-            _, current_g, current = heapq.heappop(open_set)
-            if current == goal:
-                return current_g
-
-            if current in visited:
-                continue
-            visited.add(current)
-
-            for dx, dy in directions:
-                next_pos = (current[0] + dx, current[1] + dy)
-
-                if 0 <= next_pos[0] < rows and 0 <= next_pos[1] < cols and grid[next_pos[0], next_pos[1]] == 0:
-                    tentative_g = current_g + 1
-
-                    if next_pos not in g_score or tentative_g < g_score[next_pos]:
-                        g_score[next_pos] = tentative_g
-                        f_score = tentative_g + manhattan_distance(next_pos, goal)
-                        heapq.heappush(open_set, (f_score, tentative_g, next_pos))
-
-        return 128  # No path found
-
-    return a_star(current_agent_location, goal_agent_location, map_info)
+    return 128  # No path found
 
 def create_distance_map(map_data):
     # Get dimensions and find all accessible points
