@@ -189,6 +189,8 @@ def move_agent(agent_num, current_locs, action, _map, temperature):
     while True:
         collision_flag = False
         map_mark = 1 * _map  # 创建占位地图
+        
+        # First check normal collisions
         for i in range(agent_num):
             location = tmp_current_locs[i]
             map_mark[location[0], location[1]] += 1  
@@ -203,26 +205,21 @@ def move_agent(agent_num, current_locs, action, _map, temperature):
                     collision_flag_per_agent[i] = True
                     temperature[i] += 1
 
-        # Check position swaps
-        swap_dict = {}
-        # 记录每个代理的当前位置
-        for idx, (tmp_loc, cur_loc) in enumerate(zip(tmp_current_locs, current_locs)):
-            # 将代理位置对加入哈希表
-            swap_dict[(tuple(tmp_loc), tuple(cur_loc))] = idx
+        # Check position swaps - 重写交换检测逻辑
+        for i in range(agent_num):
+            for j in range(i + 1, agent_num):
+                # 检查两个智能体是否发生位置交换
+                if (tuple(tmp_current_locs[i]) == tuple(current_locs[j]) and 
+                    tuple(tmp_current_locs[j]) == tuple(current_locs[i])):
+                    # 发生交换，恢复原位置
+                    tmp_current_locs[i] = current_locs[i]
+                    tmp_current_locs[j] = current_locs[j]
+                    collision_flag = True
+                    collision_flag_per_agent[i] = True
+                    collision_flag_per_agent[j] = True
+                    temperature[i] += 1
+                    temperature[j] += 1
 
-        # 检查是否有交换碰撞
-        for (loc1, loc2), agent in swap_dict.items():
-            if (loc2, loc1) in swap_dict:
-                agent_other = swap_dict[(loc2, loc1)]
-                tmp_current_locs[agent] = current_locs[agent]
-                tmp_current_locs[agent_other] = current_locs[agent_other]
-                swap_dict.pop((loc1, loc2))
-                swap_dict.pop((loc2, loc1))
-                collision_flag = True
-                temperature[agent] += 1
-                temperature[agent_other] += 1
-                collision_flag_per_agent[agent] = True
-                collision_flag_per_agent[agent_other] = True
         if not collision_flag:
             break
     for i in range(agent_num):
