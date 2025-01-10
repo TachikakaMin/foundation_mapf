@@ -8,63 +8,38 @@ from tqdm import tqdm
 import h5py
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import heapq
-
-def calculate_minimum_distance(current_agent_location, goal_agent_location, map_info):
-    def manhattan_distance(p1, p2):
-        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
-
-    def a_star(start, goal, grid):
-        if tuple(start) == tuple(goal):
-            return 0
-
-        rows, cols = grid.shape
-        start = tuple(start)
-        goal = tuple(goal)
-
-        open_set = [(manhattan_distance(start, goal), 0, start)]
-        g_score = {start: 0}
-        visited = set()
-        directions = [(0, 1), (0, -1), (-1, 0), (1, 0)]
-
-        while open_set:
-            _, current_g, current = heapq.heappop(open_set)
-            if current == goal:
-                return current_g
-
-            if current in visited:
-                continue
-            visited.add(current)
-
-            for dx, dy in directions:
-                next_pos = (current[0] + dx, current[1] + dy)
-
-                if 0 <= next_pos[0] < rows and 0 <= next_pos[1] < cols and grid[next_pos[0], next_pos[1]] == 0:
-                    tentative_g = current_g + 1
-
-                    if next_pos not in g_score or tentative_g < g_score[next_pos]:
-                        g_score[next_pos] = tentative_g
-                        f_score = tentative_g + manhattan_distance(next_pos, goal)
-                        heapq.heappush(open_set, (f_score, tentative_g, next_pos))
-
-        return 128  # No path found
-
-    return a_star(current_agent_location, goal_agent_location, map_info)
+NOT_FOUND_PATH = 128
 
 def create_distance_map(map_data):
-    # Get dimensions and find all accessible points
-    rows, cols = map_data.shape
-    accessible_points = [(i, j) for i in range(rows) for j in range(cols) if map_data[i, j] == 0]
+    from collections import deque
+    n, m = map_data.shape
+    dist_matrix = {}
+
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    accessible_points = [(i, j) for i in range(n) for j in range(m) if map_data[i, j] == 0]
     
-    # Create distance dictionary
-    distance_map = {}
-    
-    # Calculate distances between all pairs of accessible points
     for start in tqdm(accessible_points, desc="Calculating distances"):
-        for goal in accessible_points:
-            distance = calculate_minimum_distance(start, goal, map_data)
-            distance_map[(start, goal)] = distance
-    
-    return distance_map
+
+        i,j = start
+        dist = np.full((n, m), fill_value=NOT_FOUND_PATH, dtype=np.int32)
+        dist[i][j] = 0 
+
+        queue = deque()
+        queue.append((i, j))
+
+        while queue:
+            x, y = queue.popleft()
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < n and 0 <= ny < m:
+                    if map_data[nx][ny] == 0 and dist[nx][ny] == NOT_FOUND_PATH:
+                        dist[nx][ny] = dist[x][y] + 1
+                        queue.append((nx, ny))
+
+        dist_matrix[(i, j)] = dist
+
+    return dist_matrix
+
 
 class MAPFDataset(Dataset):
     def __init__(self, h5_files, feature_dim):
@@ -86,6 +61,7 @@ class MAPFDataset(Dataset):
         
             if not os.path.exists(distance_cache_file):
                 map_data = self.all_map_data[map_name].numpy()
+                print("dis map")
                 distance_map = create_distance_map(map_data)
                 with open(distance_cache_file, 'wb') as f:
                     pickle.dump(distance_map, f)
@@ -139,10 +115,10 @@ class MAPFDataset(Dataset):
     def get_distance(self, start, goal, map_name):
         # Convert start and goal to tuples
         start = tuple(start)
-        goal = tuple(goal)
-        
-        # Directly look up in the dictionary
-        return self.all_distance_maps[map_name].get((start, goal), 128)
+        if start in self.all_distance_maps[map_name].keys():
+            # Directly look up in the dictionary
+            return self.all_distance_maps[map_name][start][goal[0]][goal[1]]
+        return NOT_FOUND_PATH
     
     def read_map(self, map_name):
         map_path = f"map_file/{map_name}"

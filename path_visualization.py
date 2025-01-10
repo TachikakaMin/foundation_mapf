@@ -7,6 +7,7 @@ from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
 from data_preprocess.datasetMAPF import calculate_minimum_distance
+from tqdm import tqdm
 
 def sample_agent_information(args, val_loader, a, b):
     """
@@ -253,7 +254,7 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     # 用于存储每个智能体在每个步骤的位置，添加初始位置
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
     temperature = [1.0] * agent_num
-    for step in range(300):
+    for step in tqdm(range(150)):
         current_feature, current_mask, current_loc, current_loc_tuple, temperature = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \

@@ -1,5 +1,5 @@
 import torch
-
+from tqdm import tqdm
 def evaluate_valid_loss(model, val_loaders, loss_fn, device):
     """
     Evaluates the model on the validation set.
@@ -21,7 +21,7 @@ def evaluate_valid_loss(model, val_loaders, loss_fn, device):
 
     with torch.no_grad():  # Disable gradient calculation
         for val_loader in val_loaders:
-            for batch in val_loader:
+            for batch in tqdm(val_loader):
                 # Load validation data onto the correct device (CPU/GPU)
                 feature = batch["feature"].to(device)
                 action_y = batch["action"].to(device)
