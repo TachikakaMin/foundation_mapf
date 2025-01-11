@@ -6,7 +6,6 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
-from data_preprocess.datasetMAPF import calculate_minimum_distance
 from tqdm import tqdm
 
 def sample_agent_information(args, val_loader, a, b):
@@ -21,7 +20,8 @@ def sample_agent_information(args, val_loader, a, b):
     batch_size = val_loader.batch_size
     start_idx = a * batch_size + b
     val_batch = val_loader.dataset[start_idx]
-    
+    map_name = val_loader.dataset.train_data_map_name[start_idx]
+    dis_map = val_loader.dataset.all_distance_maps[map_name]
     # 提取 batch 中第 b 个 sample 的信息
     val_sample_feature = val_batch["feature"]  # shape:[channel_len, n, m]
     val_sample_curr_mask = val_batch["mask"]  # shape:[n, m]
@@ -42,12 +42,12 @@ def sample_agent_information(args, val_loader, a, b):
     
     return val_sample_feature, val_sample_agent_num, val_sample_map, \
         val_sample_curr_mask, val_sample_current_loc, agents_current_loc_tuple, \
-            val_sample_goal_loc, agents_goal_loc_dict
+            val_sample_goal_loc, agents_goal_loc_dict, dis_map
 
 
 def sample_agent_action_update(model, feature, agent_num, _map, \
                             curr_mask, current_loc, current_loc_tuple, \
-                                goal_loc, goal_loc_dict, device, action_choice, temperature):
+                                goal_loc, goal_loc_dict, device, action_choice, temperature, dis_map):
     model.eval()
     m, n = curr_mask.shape
     curr_mask = curr_mask.to(device)
@@ -92,10 +92,6 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
 
     last_loc_1 = feature[1]
-    # last_loc_2 = feature[5]
-    # last_loc_3 = feature[6]
-    # last_loc_4 = feature[7]
-    # last_loc_5 = feature[8]
     feature = torch.zeros_like(feature)
     feature[0] = _map
     feature[1] = current_loc
@@ -106,58 +102,11 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
         agent_idx = int(agent_idx)
         agent_goal_loc = goal_loc_dict[agent_idx]
-        distance_to_goal = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()),
-            agent_goal_loc.tolist(),
-            _map + current_loc
-        )
-        left_distance = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()),
-            agent_goal_loc.tolist(),
-            _map + current_loc
-        ) - distance_to_goal
-        right_distance = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()),
-            agent_goal_loc.tolist(),
-            _map + current_loc
-        ) - distance_to_goal
-        down_distance = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1),
-            agent_goal_loc.tolist(),
-            _map + current_loc
-        ) - distance_to_goal
-        up_distance = calculate_minimum_distance(
-            (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1),
-            agent_goal_loc.tolist(),
-            _map + current_loc
-        ) - distance_to_goal
-        if left_distance > 0 and right_distance > 0:
-            dx = 0
-        elif left_distance > 0 and right_distance < 0:
-            dx = -1
-        elif left_distance < 0 and right_distance > 0:
-            dx = 1
-        else:
-            dx = 1
-        if down_distance > 0 and up_distance > 0:
-            dy = 0
-        elif down_distance > 0 and up_distance < 0:
-            dy = -1
-        elif down_distance < 0 and up_distance > 0:
-            dy = 1
-        else:
-            dy = 1
 
-        # feature[3, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
-        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
-        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
-
-        feature[6, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
-    # feature[7] = last_loc_2
-    # feature[8] = last_loc_3
-    # feature[9] = last_loc_4
-    # feature[10] = last_loc_5
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
+        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
+        key = current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()
+        feature[6, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dis_map[key][agent_goal_loc[0]][agent_goal_loc[1]]
 
     curr_mask = (current_loc > 0)
 
@@ -249,7 +198,7 @@ def calculate_current_goal_distance(current_loc, current_loc_tuple, goal_loc_dic
 def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
     current_feature, agent_num, _map, \
         current_mask, current_loc, current_loc_tuple, \
-        goal_loc, goal_loc_dict = sample_agent_information(args, val_loader, a, b)
+        goal_loc, goal_loc_dict, dis_map = sample_agent_information(args, val_loader, a, b)
     
     # 用于存储每个智能体在每个步骤的位置，添加初始位置
     trajectories = [ [tuple(current_loc_tuple[i].tolist())] for i in range(agent_num)]
@@ -258,7 +207,7 @@ def path_formation(args, model, val_loader, a, b, device, action_choice="max"):
         current_feature, current_mask, current_loc, current_loc_tuple, temperature = sample_agent_action_update(
             model, current_feature, agent_num, _map, \
                 current_mask, current_loc, current_loc_tuple, \
-                    goal_loc, goal_loc_dict, device, action_choice, temperature
+                    goal_loc, goal_loc_dict, device, action_choice, temperature, dis_map
         )
         # 记录当前步骤每个智能体的位置
         for i in range(agent_num):
