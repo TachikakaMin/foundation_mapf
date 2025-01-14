@@ -89,12 +89,13 @@ class MAPFDataset(Dataset):
                     os.remove(invalid_file)
 
     def process_h5_file(self, h5_file):
-        cache_file = os.path.join(self.cache_dir, f"{os.path.basename(h5_file)}.npy")
         
         with h5py.File(h5_file, "r") as f:
             map_name = f['/statistics'].attrs['map']
             if not (map_name in self.all_map_data.keys()):
                 self.all_map_data[map_name] = torch.FloatTensor(self.read_map(map_name))
+        cache_file = os.path.join(self.cache_dir, map_name.split(".")[0], f"{os.path.basename(h5_file)}.npy")
+        os.makedirs(os.path.join(self.cache_dir, map_name.split(".")[0]), exist_ok=True)
                 
         if os.path.exists(cache_file):
             try:
