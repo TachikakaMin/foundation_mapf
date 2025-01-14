@@ -7,6 +7,7 @@ from matplotlib.animation import FuncAnimation
 import itertools
 import cv2
 from tqdm import tqdm
+NOT_FOUND_PATH = 128
 
 def sample_agent_information(args, val_loader, a, b):
     """
@@ -98,6 +99,13 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
     feature[2] = goal_loc
     feature[3] = last_loc_1
 
+    def get_distance(dis_map, start, goal):
+        # Convert start and goal to tuples
+        start = tuple(start)
+        if start in dis_map.keys():
+            # Directly look up in the dictionary
+            return dis_map[start][goal[0]][goal[1]]
+        return NOT_FOUND_PATH
     for i in range(agent_num):
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
         agent_idx = int(agent_idx)
@@ -105,11 +113,11 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
 
         # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
         # feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        distance_to_goal = dis_map[current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()][agent_goal_loc[0]][agent_goal_loc[1]]
-        left_distance = dis_map[current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
-        right_distance = dis_map[current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
-        down_distance = dis_map[current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
-        up_distance = dis_map[current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
+        distance_to_goal = get_distance(dis_map, current_loc_tuple[i], agent_goal_loc)
+        left_distance = get_distance(dis_map, (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()), agent_goal_loc) - distance_to_goal
+        right_distance = get_distance(dis_map, (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()), agent_goal_loc) - distance_to_goal
+        down_distance = get_distance(dis_map, (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1), agent_goal_loc) - distance_to_goal
+        up_distance = get_distance(dis_map, (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1), agent_goal_loc) - distance_to_goal
         if left_distance > 0 and right_distance > 0:
             dx = 0
         elif left_distance > 0 and right_distance < 0:
