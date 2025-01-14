@@ -103,10 +103,32 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_idx = int(agent_idx)
         agent_goal_loc = goal_loc_dict[agent_idx]
 
-        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
-        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        key = current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()
-        feature[6, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dis_map[key][agent_goal_loc[0]][agent_goal_loc[1]]
+        # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
+        # feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
+        distance_to_goal = dis_map[current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()][agent_goal_loc[0]][agent_goal_loc[1]]
+        left_distance = dis_map[current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
+        right_distance = dis_map[current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
+        down_distance = dis_map[current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
+        up_distance = dis_map[current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()+1][agent_goal_loc[0]][agent_goal_loc[1]] - distance_to_goal
+        if left_distance > 0 and right_distance > 0:
+            dx = 0
+        elif left_distance > 0 and right_distance < 0:
+            dx = -1
+        elif left_distance < 0 and right_distance > 0:
+            dx = 1
+        else:
+            dx = 1
+        if down_distance > 0 and up_distance > 0:
+            dy = 0
+        elif down_distance > 0 and up_distance < 0:
+            dy = -1
+        elif down_distance < 0 and up_distance > 0:
+            dy = 1
+        else:
+            dy = 1
+        feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dx
+        feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = dy
+        feature[6, current_loc_tuple[i][0], current_loc_tuple[i][1]] = distance_to_goal
 
     curr_mask = (current_loc > 0)
 

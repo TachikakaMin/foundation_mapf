@@ -170,9 +170,54 @@ class MAPFDataset(Dataset):
             feature[3, last_agent_locations_1[i, 0], last_agent_locations_1[i, 1]] = i+1
 
         for i in range(current_agent_locations.shape[0]):
-            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
-            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
-            feature[6, current_agent_locations[i, 0], current_agent_locations[i, 1]] = self.get_distance(current_agent_locations[i], goal_agent_locations[i], map_name)
+            # feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 0] - current_agent_locations[i, 0]
+            # feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = goal_agent_locations[i, 1] - current_agent_locations[i, 1]
+            distance_to_goal = self.get_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_name
+            )
+            left_distance = self.get_distance(
+                (current_agent_locations[i, 0]-1, current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal
+            right_distance = self.get_distance(
+                (current_agent_locations[i, 0]+1, current_agent_locations[i, 1]),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal    
+            down_distance = self.get_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]-1),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal
+            up_distance = self.get_distance(
+                (current_agent_locations[i, 0], current_agent_locations[i, 1]+1),
+                goal_agent_locations[i],
+                map_name
+            ) - distance_to_goal
+
+
+            if left_distance > 0 and right_distance > 0:
+                dx = 0
+            elif left_distance > 0 and right_distance < 0:
+                dx = -1
+            elif left_distance < 0 and right_distance > 0:
+                dx = 1
+            else:
+                dx = 1
+            if down_distance > 0 and up_distance > 0:
+                dy = 0
+            elif down_distance > 0 and up_distance < 0:
+                dy = -1
+            elif down_distance < 0 and up_distance > 0:
+                dy = 1
+            else:
+                dy = 1
+            feature[4, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dx
+            feature[5, current_agent_locations[i, 0], current_agent_locations[i, 1]] = dy
+            feature[6, current_agent_locations[i, 0], current_agent_locations[i, 1]] = distance_to_goal
 
         action_info = torch.zeros((m, n), dtype=torch.long)
         next_agent_locations = agent_locations[:, idx+1, :2]
