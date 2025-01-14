@@ -110,10 +110,9 @@ def sample_agent_action_update(model, feature, agent_num, _map, \
         agent_idx = current_loc[current_loc_tuple[i][0], current_loc_tuple[i][1]].item()
         agent_idx = int(agent_idx)
         agent_goal_loc = goal_loc_dict[agent_idx]
-
         # feature[4, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[0] - current_loc_tuple[i][0]
         # feature[5, current_loc_tuple[i][0], current_loc_tuple[i][1]] = agent_goal_loc[1] - current_loc_tuple[i][1]
-        distance_to_goal = get_distance(dis_map, current_loc_tuple[i], agent_goal_loc)
+        distance_to_goal = get_distance(dis_map, (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()), agent_goal_loc)
         left_distance = get_distance(dis_map, (current_loc_tuple[i][0].item()-1, current_loc_tuple[i][1].item()), agent_goal_loc) - distance_to_goal
         right_distance = get_distance(dis_map, (current_loc_tuple[i][0].item()+1, current_loc_tuple[i][1].item()), agent_goal_loc) - distance_to_goal
         down_distance = get_distance(dis_map, (current_loc_tuple[i][0].item(), current_loc_tuple[i][1].item()-1), agent_goal_loc) - distance_to_goal
