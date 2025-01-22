@@ -23,8 +23,8 @@ def get_args():
         nargs="+",
         default=["data/input_data/maze-32-32-20-0/maze-32-32-20-0-64/maze-32-32-20-0-64-0/maze-32-32-20-0-64-0-0.bin",
                  "data/input_data/maze-32-32-20-1/maze-32-32-20-1-64/maze-32-32-20-1-64-0/maze-32-32-20-1-64-0-0.bin",
-                 "data/input_data/random-32-32-20-0/random-32-32-20-0-64/random-32-32-20-0-64-0/random-32-32-20-0-64-0-0.bin",
                  "data/input_data/random-32-32-20-1/random-32-32-20-1-64/random-32-32-20-1-64-0/random-32-32-20-1-64-0-0.bin",
+                 "data/input_data/random-32-32-20-2/random-32-32-20-2-64/random-32-32-20-2-64-0/random-32-32-20-2-64-0-0.bin",
                  ],
         help="sample data path",
     )
