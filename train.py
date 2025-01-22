@@ -144,11 +144,11 @@ if __name__ == "__main__":
         net = DDP(net, device_ids=[args.local_rank])
 
     # 只在主进程上打印模型信息
-    if args.local_rank == 0:
-        total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
-        model_memory = total_params * 4 / (1024**2)
-        print(f"参数总数 (parameter):{total_params}")
-        print(f"模型大小约为 (model size):{model_memory:.2f} MB")
+    # if args.local_rank == 0:
+    #     total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+    #     model_memory = total_params * 4 / (1024**2)
+    #     print(f"参数总数 (parameter):{total_params}")
+    #     print(f"模型大小约为 (model size):{model_memory:.2f} MB")
 
     optimizer = torch.optim.AdamW(
         net.parameters(),
