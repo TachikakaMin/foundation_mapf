@@ -55,13 +55,3 @@ class UNet(nn.Module):
         self.up3 = torch.utils.checkpoint(self.up3)
         self.up4 = torch.utils.checkpoint(self.up4)
         self.output_conv = torch.utils.checkpoint(self.output_conv)
-        
-    def save_model(self, file_path):
-        """保存模型到指定路径"""
-        torch.save(self.state_dict(), file_path)
-        print(f"Model saved to {file_path}")
-
-    def load_model(self, file_path, device):
-        """从指定路径加载模型"""
-        self.load_state_dict(torch.load(file_path, map_location=device))
-        print(f"Model loaded from {file_path}")

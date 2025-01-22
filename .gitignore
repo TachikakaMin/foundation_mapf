@@ -186,3 +186,6 @@ Makefile
 cmake_install.cmake
 CMakeFiles/
 CMakeCache.txt
+
+evals
+model_checkpoint*
