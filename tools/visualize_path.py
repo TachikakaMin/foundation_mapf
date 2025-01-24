@@ -6,7 +6,7 @@ from .utils import read_map, parse_file_name
 from matplotlib.widgets import Slider  # 添加在文件开头的import部分
 
 def revert_xy(paths):
-    if not isinstance(paths[0][0], np.ndarray):
+    if not isinstance(paths[0][0], (np.ndarray, tuple)):
         return [[y, x] for x, y in paths]
     return [[[y, x] for x, y in path] for path in paths]
 

@@ -1,5 +1,6 @@
 import struct
 import glob
+import os
 from .visualize_path import visualize_path
 from .utils import parse_file_name
 
@@ -7,7 +8,7 @@ from .utils import parse_file_name
 def parse_bin_path(bin_dir):
     # Get all bin files sorted by timestep
     bin_files = sorted(
-        glob.glob(str(bin_dir / "*.bin")),
+        glob.glob(os.path.join(bin_dir, "*.bin")),
         key=lambda x: int(x.split("-")[-1].split(".")[0]),
     )
     if not bin_files:
@@ -37,4 +38,4 @@ if __name__ == "__main__":
     _, path_name = parse_file_name(folder_path)
     all_paths = parse_bin_path(folder_path)
     goal_locations = all_paths[-1]
-    visualize_path(all_paths, goal_locations, path_name, show=True)
+    visualize_path(all_paths, goal_locations, folder_path, show=True)

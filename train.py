@@ -13,7 +13,6 @@ from tools.path_formation import path_formation
 from torch.utils.tensorboard import SummaryWriter
 import random
 import glob
-from tools.visualize_path import visualize_path
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
