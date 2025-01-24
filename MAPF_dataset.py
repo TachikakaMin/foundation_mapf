@@ -60,8 +60,8 @@ class MAPFDataset(Dataset):
 
     def process_input_file(self, input_file):
         with open(input_file, "rb") as f:
-            _, agent_num, _ = parse_file_name(input_file)
-            all_data = np.frombuffer(f.read(agent_num * 5), dtype=np.uint8)
+            agent_num = int(np.frombuffer(f.read(2), dtype=np.uint16)[0])
+            all_data = np.frombuffer(f.read(agent_num * 10), dtype=np.uint16)
             agent_locations = all_data[: 2 * agent_num].reshape(agent_num, 2)
             goal_locations = all_data[2 * agent_num : 4 * agent_num].reshape(
                 agent_num, 2

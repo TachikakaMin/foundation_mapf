@@ -58,13 +58,13 @@ def convert_path_to_bin(file_name):
     for t in range(steps):
         output_file = os.path.join(output_dir, f"{path_name}-{t}.bin")
         with open(output_file, "wb") as f:
-
+            f.write(struct.pack("H", agent_num))
             # Write current positions and goals for each agent
             for agent_id in range(agent_num):
                 cur_pos = paths[agent_id][t]
                 f.write(
                     struct.pack(
-                        "BB",
+                        "HH",
                         cur_pos[0],
                         cur_pos[1],  # Current position
                     )
@@ -73,7 +73,7 @@ def convert_path_to_bin(file_name):
                 goal = paths[agent_id][-1]
                 f.write(
                     struct.pack(
-                        "BB",
+                        "HH",
                         goal[0],
                         goal[1],  # Goal position
                     )
@@ -83,7 +83,7 @@ def convert_path_to_bin(file_name):
                 cur_pos = paths[agent_id][t]
                 next_pos = paths[agent_id][t + 1] if t + 1 < steps else cur_pos
                 action = get_action(cur_pos, next_pos)
-                f.write(struct.pack("B", action))
+                f.write(struct.pack("H", action))
     distance_map_path = os.path.join(
         "data/distance_maps",
         f"{map_name}.pkl",
