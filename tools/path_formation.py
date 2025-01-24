@@ -1,7 +1,7 @@
-import random
 import torch
 from tqdm import tqdm
 from .utils import construct_input_feature, parse_file_name
+
 
 def calculate_current_goal_distance(current_locations, goal_locations):
     total_distance = 0
@@ -46,21 +46,30 @@ def move_agent(action, map_data, current_locations, temperature):
                     collision_flag = True
                     collision_flag_per_agent[i] = True
                     # temperature[i] += 1
-
-        # Then check position swaps
+        
+        # Create position mapping: position -> agent_id
+        pos_to_new_agent = {tuple(pos.tolist()): i for i, pos in enumerate(tmp_current_locs)}
+        
+        # Check swaps in single pass
         for i in range(agent_num):
-            for j in range(i + 1, agent_num):
-                if tuple(current_locations[i]) == tuple(tmp_current_locs[j]) and tuple(
-                    current_locations[j]
-                ) == tuple(tmp_current_locs[i]):
-                    tmp_current_locs[i] = current_locations[i]
-                    tmp_current_locs[j] = current_locations[j]
-                    collision_flag = True
-                    collision_flag_per_agent[i] = True
-                    collision_flag_per_agent[j] = True
-                    # temperature[i] += 1
-                    # temperature[j] += 1
-
+            if collision_flag_per_agent[i]:
+                continue
+            old_pos = tuple(current_locations[i].tolist())
+            new_pos = tuple(tmp_current_locs[i].tolist())
+            
+            if old_pos != new_pos:  # Agent has moved
+                # Check if another agent moved to this agent's old position
+                if new_agent_id := pos_to_new_agent.get(old_pos):
+                    # Check if that agent moved to current agent's new position
+                    if tuple(current_locations[new_agent_id].tolist()) == new_pos:
+                        # Swap detected - revert both agents
+                        tmp_current_locs[i] = current_locations[i]
+                        tmp_current_locs[new_agent_id] = current_locations[new_agent_id]
+                        collision_flag = True
+                        collision_flag_per_agent[i] = True
+                        collision_flag_per_agent[new_agent_id] = True
+                        # temperature[i] += 1
+                        # temperature[new_agent_id] += 1     
         if not collision_flag:
             break
     # for i in range(agent_num):
@@ -99,7 +108,7 @@ def sample_action(
 def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300):
     all_paths = []
     sample_data = val_loader.dataset[idx]
-    feature = sample_data["feature"].to(device)
+    feature = sample_data["feature"]
     file_name = sample_data["file_name"]
     map_name, path_name = parse_file_name(file_name)
     agent_num = sample_data["mask"].sum()
@@ -128,7 +137,6 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     all_paths.append(current_locations.cpu().numpy())
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
         feature = feature.to(device)
-
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             logits, _ = model.module(feature.unsqueeze(0))
         else:
@@ -152,5 +160,5 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
         current_locations, goal_locations
     )
     print(f"End Goal Distance: {current_goal_distance:.4f}")
-     
+
     return all_paths, goal_locations.cpu().numpy(), current_goal_distance, file_name

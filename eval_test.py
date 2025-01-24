@@ -36,6 +36,12 @@ def main():
         default="evals",
         help="Path to the output directory",
     )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        default=False,
+        help="Show the path",
+    )
     args = parser.parse_args()
 
     # 设置随机种子以确保可重复性
@@ -67,7 +73,7 @@ def main():
     all_paths, goal_locations, _, file_name = path_formation(
         model, val_loader, 0, device, args.feature_type, steps=args.steps
     )
-    visualize_path(all_paths, goal_locations, file_name, video_path=args.output_dir, show=True)
+    visualize_path(all_paths, goal_locations, file_name, video_path=args.output_dir, show=args.show)
 
 
 if __name__ == "__main__":
