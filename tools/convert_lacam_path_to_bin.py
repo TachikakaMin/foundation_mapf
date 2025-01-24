@@ -6,7 +6,7 @@ from threading import Lock
 import glob
 from tqdm import tqdm
 import pickle
-from .utils import create_distance_map, parse_coordinates, parse_file_name
+from .utils import create_distance_map, parse_coordinates, parse_file_name, read_map
 
 # Add lock at module level
 distance_map_lock = Lock()
@@ -25,7 +25,7 @@ def get_action(cur_pos, next_pos):
         return 0
     
 def convert_path_to_bin(file_name):
-    map_name, agent_num, path_name = parse_file_name(file_name)
+    map_name, path_name = parse_file_name(file_name)
     output_dir = file_name.split(".")[0].replace("path_files", "input_data")
     if os.path.exists(output_dir) and os.listdir(output_dir):
         return
@@ -45,7 +45,7 @@ def convert_path_to_bin(file_name):
     if solution_line == -1:
         print(f"Error: solution line not found in file: {file_name}")
         return
-    
+    agent_num = len(parse_coordinates(lines[solution_line+1].split(":")[1]))
     paths = [[] for _ in range(agent_num)]
     for line in lines[solution_line + 1 :]:
         # Parse coordinates for each timestep
@@ -84,9 +84,12 @@ def convert_path_to_bin(file_name):
                 next_pos = paths[agent_id][t + 1] if t + 1 < steps else cur_pos
                 action = get_action(cur_pos, next_pos)
                 f.write(struct.pack("H", action))
+
+    dir_prefix = map_name.split("/")[0]
     distance_map_path = os.path.join(
-        "data/distance_maps",
-        f"{map_name}.pkl",
+        dir_prefix,
+        "distance_maps",
+        f"{os.path.basename(map_name).split('.')[0]}.pkl",
     )
     
     if not os.path.exists(distance_map_path):
@@ -94,7 +97,8 @@ def convert_path_to_bin(file_name):
         with distance_map_lock:
             # Check again in case another thread created it while we were waiting
             if not os.path.exists(distance_map_path):
-                distance_map = create_distance_map(file_name)
+                map_data = read_map(map_name)
+                distance_map = create_distance_map(map_data)
                 os.makedirs(os.path.dirname(distance_map_path), exist_ok=True)
                 pickle.dump(distance_map, open(distance_map_path, "wb"))
 

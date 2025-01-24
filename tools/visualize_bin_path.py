@@ -4,7 +4,7 @@ from .visualize_path import visualize_path
 from .utils import parse_file_name
 
 
-def parse_bin_path(bin_dir, agent_num):
+def parse_bin_path(bin_dir):
     # Get all bin files sorted by timestep
     bin_files = sorted(
         glob.glob(str(bin_dir / "*.bin")),
@@ -19,6 +19,7 @@ def parse_bin_path(bin_dir, agent_num):
 
         agent_locations = []
         with open(bin_file, "rb") as f:
+            agent_num = struct.unpack("H", f.read(2))[0]
             for _ in range(agent_num):
                 cur_x, cur_y = struct.unpack("BB", f.read(2))
                 agent_locations.append((cur_x, cur_y))
@@ -33,7 +34,7 @@ if __name__ == "__main__":
         print("Usage: python visualize_bin_path.py <path_to_bin_directory>")
         sys.exit(1)
     folder_path = sys.argv[1]
-    map_name, agent_num, path_name = parse_file_name(folder_path)
-    all_paths = parse_bin_path(folder_path, agent_num)
+    _, path_name = parse_file_name(folder_path)
+    all_paths = parse_bin_path(folder_path)
     goal_locations = all_paths[-1]
     visualize_path(all_paths, goal_locations, path_name, show=True)

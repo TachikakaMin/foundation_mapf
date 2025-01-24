@@ -19,7 +19,7 @@ class MAPFDataset(Dataset):
     def __getitem__(self, idx):
         file_name = self.input_files[idx]
         data = self.process_input_file(file_name)
-        map_name, _, _ = parse_file_name(file_name)
+        map_name, _ = parse_file_name(file_name)
         map_data = self.get_map(map_name)
         distance_map = self.get_distance_map(map_name)
         agent_locations = torch.tensor(data["agent_locations"], dtype=torch.long)

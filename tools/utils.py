@@ -4,6 +4,9 @@ import pickle
 from tqdm import tqdm
 import torch
 import random
+from collections import deque
+from multiprocessing import Pool
+
 NOT_FOUND_PATH = 128
 
 def get_distance(distance_map, agent_location, goal_location):
@@ -98,30 +101,35 @@ def construct_input_feature(
 
 
 def parse_file_name(file_name):
-    file_name = os.path.basename(file_name).split(".")[0]
-    name_parts = file_name.split("-")
-    map_name = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}-{name_parts[4]}"
-    agent_num = int(name_parts[5])
-    return map_name, agent_num, file_name
+    dir_prefix = file_name.split("/")[0]
+    path_name = os.path.basename(file_name).split(".")[0]
+    if "even" in path_name:
+        map_name = path_name.split("-even")[0]
+        map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
+    elif "random" in path_name:
+        map_name = path_name.split("-random")[0]
+        map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
+    else:
+        name_parts = path_name.split("-")
+        map_name = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}-{name_parts[4]}"
+        map_folder = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}"
+        map_file_path = os.path.join(dir_prefix, "map_files", map_folder, f"{map_name}.map")
+    return map_file_path, path_name
 
 
-def read_map(map_name):
-    name_parts = map_name.split("-")
-    map_path = os.path.join(
-        "data/map_files",
-        f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}",
-        f"{map_name}.map",
-    )
-    with open(map_path, "r") as f:
+def read_map(map_file_path):
+    with open(map_file_path, "r") as f:
         map_lines = f.readlines()
+        height = int(map_lines[1].split(" ")[1])
+        width = int(map_lines[2].split(" ")[1])
         # 读取地图数据并去除每行末尾的换行符, 跳过前4行
         map_lines = [line.rstrip("\n") for line in map_lines[4:]]
 
     # 将地图字符转换为二进制数组
-    map_data = np.zeros((len(map_lines), len(map_lines[0])))
-    for i, line in enumerate(map_lines):
-        for j, char in enumerate(line):
-            if char == "@":
+    map_data = np.zeros((height, width))
+    for i in range(height):
+        for j in range(width):
+            if map_lines[i][j] == "@" or map_lines[i][j] == "T":
                 map_data[i][j] = 1  # 障碍物标记为1
             else:
                 map_data[i][j] = 0  # 可通行区域标记为0
@@ -129,48 +137,63 @@ def read_map(map_name):
     return map_data
 
 
-def read_distance_map(map_name):
-    map_path = os.path.join(
-        "data/distance_maps",
-        f"{map_name}.pkl",
+def read_distance_map(map_file_path):
+    dir_prefix = map_file_path.split("/")[0]
+    file_path = os.path.join(
+        dir_prefix,
+        "distance_maps",
+        f"{os.path.basename(map_file_path).split('.')[0]}.pkl",
     )
-    return pickle.load(open(map_path, "rb"))
+    return pickle.load(open(file_path, "rb"))
 
-
-def create_distance_map(file_name):
+def calculate_single_point_distances(args):
+    start, map_data, n, m = args
     NOT_FOUND_PATH = 128
-    map_name, _, _ = parse_file_name(file_name)
-    map_data = read_map(map_name)
-    from collections import deque
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    
+    i, j = start
+    dist = np.full((n, m), fill_value=NOT_FOUND_PATH, dtype=np.int32)
+    dist[i][j] = 0
+
+    queue = deque()
+    queue.append((i, j))
+
+    while queue:
+        x, y = queue.popleft()
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < n and 0 <= ny < m:
+                if map_data[nx][ny] == 0 and dist[nx][ny] == NOT_FOUND_PATH:
+                    dist[nx][ny] = dist[x][y] + 1
+                    queue.append((nx, ny))
+    
+    return (start, dist)
+
+
+def create_distance_map(map_data):
 
     n, m = map_data.shape
-    dist_matrix = {}
-
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
     accessible_points = [
         (i, j) for j in range(m) for i in range(n) if map_data[i, j] == 0
     ]
-
-    for start in tqdm(accessible_points, desc="Calculating distances"):
-
-        i, j = start
-        dist = np.full((n, m), fill_value=NOT_FOUND_PATH, dtype=np.int32)
-        dist[i][j] = 0
-
-        queue = deque()
-        queue.append((i, j))
-
-        while queue:
-            x, y = queue.popleft()
-            for dx, dy in directions:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < n and 0 <= ny < m:
-                    if map_data[nx][ny] == 0 and dist[nx][ny] == NOT_FOUND_PATH:
-                        dist[nx][ny] = dist[x][y] + 1
-                        queue.append((nx, ny))
-
-        dist_matrix[(i, j)] = dist
-
+    
+    # 准备并行处理的参数
+    args = [(start, map_data, n, m) for start in accessible_points]
+    
+    # 使用CPU核心数作为进程数
+    # num_processes = multiprocessing.cpu_count()
+    
+    # 创建进程池并执行并行计算
+    with Pool() as pool:
+        results = list(tqdm(
+            pool.imap(calculate_single_point_distances, args),
+            total=len(accessible_points),
+            desc="Calculating distances"
+        ))
+    
+    # 将结果转换为字典
+    dist_matrix = dict(results)
+    
     return dist_matrix
 
 

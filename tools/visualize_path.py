@@ -14,7 +14,8 @@ def revert_xy(paths):
 def visualize_path(all_paths, goal_locations, file_name, video_path=None, show=False):
     all_paths = revert_xy(all_paths)
     goal_locations = revert_xy(goal_locations)
-    map_name, agent_num, path_name = parse_file_name(file_name)
+    map_name, path_name = parse_file_name(file_name)
+    agent_num = len(goal_locations)
     map_data = read_map(map_name)
     height, width = map_data.shape
     steps = len(all_paths)

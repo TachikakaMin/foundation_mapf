@@ -101,12 +101,13 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     sample_data = val_loader.dataset[idx]
     feature = sample_data["feature"].to(device)
     file_name = sample_data["file_name"]
-    map_name, agent_num, path_name = parse_file_name(file_name)
+    map_name, path_name = parse_file_name(file_name)
+    agent_num = sample_data["mask"].sum()
     print(f"Path Formation: {path_name}")
 
     map_data = feature[0]
     distance_map = val_loader.dataset.get_distance_map(map_name)
-    
+
     # Get locations based on agent IDs from feature maps
     goal_locations = []
     current_locations = []
@@ -127,7 +128,7 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     all_paths.append(current_locations.cpu().numpy())
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
         feature = feature.to(device)
-        # 如果是DDP模型，获取基础模型
+
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             logits, _ = model.module(feature.unsqueeze(0))
         else:
@@ -151,5 +152,5 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
         current_locations, goal_locations
     )
     print(f"End Goal Distance: {current_goal_distance:.4f}")
-
+     
     return all_paths, goal_locations.cpu().numpy(), current_goal_distance, file_name
