@@ -74,6 +74,7 @@ def main():
         num_workers=1,
     )
     print("len(val_loader):", len(val_loader))
+    os.makedirs(args.output_dir, exist_ok=True)
     log_file_path = os.path.join(args.output_dir, args.dataset_paths[0].split("/")[2] + "_log.txt")
     for i in tqdm(range(len(val_loader)), desc="Evaluating"):
         _, _, _, _ = path_formation(
