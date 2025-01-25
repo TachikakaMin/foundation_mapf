@@ -164,6 +164,8 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
             feature_type
         )
         all_paths.append(current_locations.cpu().numpy())
+        if torch.equal(current_locations, goal_locations):
+            break
     current_goal_distance, success_rate = statistic_result(
         current_locations, goal_locations
     )
