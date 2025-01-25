@@ -42,7 +42,7 @@ def convert_path_to_bin(file_name):
             solution_line = i
             break
             
-    if solution_line == -1:
+    if solution_line == -1 or solution_line == len(lines) - 1:
         print(f"Error: solution line not found in file: {file_name}")
         return
     agent_num = len(parse_coordinates(lines[solution_line+1].split(":")[1]))

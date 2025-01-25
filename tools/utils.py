@@ -103,7 +103,15 @@ def construct_input_feature(
 def parse_file_name(file_name):
     dir_prefix = file_name.split("/")[0]
     path_name = os.path.basename(file_name).split(".")[0]
-    if "even" in path_name:
+    if "mapf_gpt" in file_name:
+        dir_prefix_2 = file_name.split("/")[2]
+        name_parts = path_name.split("-")
+        if "path" in file_name:
+            map_name = "-".join(name_parts[:-2])
+        else:
+            map_name = "-".join(name_parts[:-3])
+        map_file_path = os.path.join(dir_prefix, "map_files", dir_prefix_2, f"{map_name}.map")
+    elif "even" in path_name:
         map_name = path_name.split("-even")[0]
         map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
     elif "random" in path_name:
