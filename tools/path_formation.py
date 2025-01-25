@@ -3,13 +3,16 @@ from tqdm import tqdm
 from .utils import construct_input_feature, parse_file_name
 
 
-def calculate_current_goal_distance(current_locations, goal_locations):
+def statistic_result(current_locations, goal_locations):
     total_distance = 0
+    success_num = 0
     for i in range(len(current_locations)):
         total_distance += abs(current_locations[i][0] - goal_locations[i][0]) + abs(
             current_locations[i][1] - goal_locations[i][1]
         )
-    return total_distance
+        if torch.equal(current_locations[i], goal_locations[i]):
+            success_num += 1
+    return total_distance, success_num / len(current_locations)
 
 
 def move_agent(action, map_data, current_locations, temperature):
@@ -105,14 +108,19 @@ def sample_action(
     return action
 
 
-def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300):
+def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None):
+    def log_print(msg):
+        print(msg)
+        if log_file:
+            with open(log_file, "a") as f:
+                f.write(msg + "\n")
     all_paths = []
     sample_data = val_loader.dataset[idx]
     feature = sample_data["feature"]
     file_name = sample_data["file_name"]
     map_name, path_name = parse_file_name(file_name)
     agent_num = sample_data["mask"].sum()
-    print(f"Path Formation: {path_name}")
+    log_print(f"Path Formation: {path_name}")
 
     map_data = feature[0]
     distance_map = val_loader.dataset.get_distance_map(map_name)
@@ -129,10 +137,10 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     current_locations = torch.stack(current_locations)
     goal_locations = torch.stack(goal_locations)
     
-    current_goal_distances = calculate_current_goal_distance(
+    current_goal_distance, _ = statistic_result(
         current_locations, goal_locations
     )
-    print("Start Goal Distance: ", current_goal_distances)
+    print("Start Goal Distance: ", current_goal_distance)
     temperature = torch.ones(agent_num)
     all_paths.append(current_locations.cpu().numpy())
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
@@ -156,9 +164,9 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
             feature_type
         )
         all_paths.append(current_locations.cpu().numpy())
-    current_goal_distance = calculate_current_goal_distance(
+    current_goal_distance, success_rate = statistic_result(
         current_locations, goal_locations
     )
-    print(f"End Goal Distance: {current_goal_distance:.4f}")
+    log_print(f"End Goal Distance: {current_goal_distance:.4f}, Success Rate: {success_rate:.4f}")
 
     return all_paths, goal_locations.cpu().numpy(), current_goal_distance, file_name
