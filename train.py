@@ -134,7 +134,7 @@ if __name__ == "__main__":
 
     # model
     if args.model == "unet":
-        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, bilinear=args.bilinear)
+        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear)
     elif args.model == "cnn":
         net = CNN(n_channels=args.feature_dim, n_classes=args.action_dim)
     net.to(device)

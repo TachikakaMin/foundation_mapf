@@ -60,6 +60,7 @@ def get_args():
     parser.add_argument(
         "--bilinear", action="store_true", default=False, help="Use bilinear upsampling"
     )
+    parser.add_argument("--first_layer_channels", "-flc", type=int, default=64, help="First layer channels")
     # 添加分布式训练参数
     parser.add_argument(
         "--distributed", action="store_true", help="Enable distributed training"

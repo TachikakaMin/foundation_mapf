@@ -5,23 +5,23 @@ from .unet_util import *
 class UNet(nn.Module):
     """最小能处理的输入尺寸为 16*16
     """
-    def __init__(self, n_channels, n_classes, bilinear=False):
+    def __init__(self, n_channels, n_classes, first_layer_channels=64, bilinear=False):
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
         factor = 2 if bilinear else 1
 
-        self.input_conv = (DoubleConv(n_channels, 64))
-        self.down1 = (Down(64, 128))
-        self.down2 = (Down(128, 256))
-        self.down3 = (Down(256, 512))
-        self.down4 = (Down(512, 1024 // factor))
-        self.up1 = (Up(1024, 512 // factor, bilinear))
-        self.up2 = (Up(512, 256 // factor, bilinear))
-        self.up3 = (Up(256, 128 // factor, bilinear))
-        self.up4 = (Up(128, 64, bilinear))
-        self.output_conv = (OutConv(64, n_classes))
+        self.input_conv = (DoubleConv(n_channels, first_layer_channels))
+        self.down1 = (Down(first_layer_channels, first_layer_channels*2))
+        self.down2 = (Down(first_layer_channels*2, first_layer_channels*4))
+        self.down3 = (Down(first_layer_channels*4, first_layer_channels*8))
+        self.down4 = (Down(first_layer_channels*8, first_layer_channels*16 // factor))
+        self.up1 = (Up(first_layer_channels*16, first_layer_channels*8 // factor, bilinear))
+        self.up2 = (Up(first_layer_channels*8, first_layer_channels*4 // factor, bilinear))
+        self.up3 = (Up(first_layer_channels*4, first_layer_channels*2 // factor, bilinear))
+        self.up4 = (Up(first_layer_channels*2, first_layer_channels, bilinear))
+        self.output_conv = (OutConv(first_layer_channels, n_classes))
         # 将模型的输出转换为概率分布
         self.softmax = nn.Softmax(dim=1)
 

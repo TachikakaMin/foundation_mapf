@@ -32,6 +32,13 @@ def main():
         "--bilinear", action="store_true", default=False, help="Use bilinear upsampling"
     )
     parser.add_argument(
+        "--first_layer_channels",
+        "-flc",
+        type=int,
+        default=64,
+        help="First layer channels",
+    )
+    parser.add_argument(
         "--output_dir",
         type=str,
         default="evals",
@@ -55,8 +62,13 @@ def main():
 
     # 初始化模型
     model = UNet(
-        n_channels=args.feature_dim, n_classes=args.action_dim, bilinear=args.bilinear
+        n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear
     ).to(device)
+
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    model_memory = total_params * 4 / (1024**2)
+    print(f"参数总数 (parameter):{total_params}")
+    print(f"模型大小约为 (model size):{model_memory:.2f} MB")    
 
     # 加载模型权重
     model.load_state_dict(torch.load(args.model_path, map_location=device))
