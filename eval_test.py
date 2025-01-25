@@ -7,8 +7,9 @@ from tools.visualize_path import visualize_path
 import numpy as np
 import random
 import argparse
-
-
+import glob
+import os
+from tqdm import tqdm
 def main():
     # 获取参数
     parser = argparse.ArgumentParser()
@@ -60,20 +61,23 @@ def main():
     # 加载模型权重
     model.load_state_dict(torch.load(args.model_path, map_location=device))
     model.eval()
-
+    if not args.dataset_paths[0].endswith(".bin"):
+        input_files = glob.glob(os.path.join(args.dataset_paths[0], "**/*-0.bin"), recursive=True)
+    else:
+        input_files = args.dataset_paths
     # 准备验证数据集
-    test_dataset = MAPFDataset(args.dataset_paths, args.feature_dim, args.feature_type)
+    test_dataset = MAPFDataset(input_files, args.feature_dim, args.feature_type)
     val_loader = DataLoader(
         test_dataset,
         batch_size=1,
         shuffle=False,
         num_workers=1,
     )
-
-    all_paths, goal_locations, _, file_name = path_formation(
-        model, val_loader, 0, device, args.feature_type, steps=args.steps
-    )
-    visualize_path(all_paths, goal_locations, file_name, video_path=args.output_dir, show=args.show)
+    for i in tqdm(range(len(val_loader)), desc="Evaluating"):
+        all_paths, goal_locations, _, file_name = path_formation(
+            model, val_loader, i, device, args.feature_type, steps=args.steps
+        )
+    # visualize_path(all_paths, goal_locations, file_name, video_path=args.output_dir, show=args.show)
 
 
 if __name__ == "__main__":
