@@ -20,13 +20,13 @@ def move_agent(action, map_data, current_locations, temperature):
         x, y = current_locations[i]
         act_dir = action[x, y]
         if act_dir == 1:  # up
-            y = min(height - 1, y + 1)
+            y = min(width - 1, y + 1)
         if act_dir == 2:  # down
             y = max(0, y - 1)
         if act_dir == 3:  # left
             x = max(0, x - 1)
         if act_dir == 4:  # right
-            x = min(width - 1, x + 1)
+            x = min(height - 1, x + 1)
         tmp_current_locs[i] = torch.tensor([x, y])
     collision_flag_per_agent = torch.zeros(agent_num, dtype=torch.bool)
     while True:

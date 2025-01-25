@@ -73,6 +73,7 @@ def main():
         shuffle=False,
         num_workers=1,
     )
+    print("len(val_loader):", len(val_loader))
     for i in tqdm(range(len(val_loader)), desc="Evaluating"):
         all_paths, goal_locations, _, file_name = path_formation(
             model, val_loader, i, device, args.feature_type, steps=args.steps
