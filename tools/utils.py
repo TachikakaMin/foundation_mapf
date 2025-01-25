@@ -111,12 +111,13 @@ def parse_file_name(file_name):
         else:
             map_name = "-".join(name_parts[:-3])
         map_file_path = os.path.join(dir_prefix, "map_files", dir_prefix_2, f"{map_name}.map")
-    elif "even" in path_name:
-        map_name = path_name.split("-even")[0]
-        map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
-    elif "random" in path_name:
-        map_name = path_name.split("-random")[0]
-        map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
+    elif "data_benchmark" in file_name:
+        if "even" in path_name:
+            map_name = path_name.split("-even")[0]
+            map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
+        elif "random" in path_name:
+            map_name = path_name.split("-random")[0]
+            map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
     else:
         name_parts = path_name.split("-")
         map_name = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}-{name_parts[4]}"
