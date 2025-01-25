@@ -17,20 +17,26 @@ def statistic_result(current_locations, goal_locations):
 
 def move_agent(action, map_data, current_locations, temperature):
     agent_num = current_locations.shape[0]
+    device = current_locations.device
     height, width = map_data.shape
     tmp_current_locs = current_locations.clone()
-    for i in range(agent_num):
-        x, y = current_locations[i]
-        act_dir = action[x, y]
-        if act_dir == 1:  # up
-            y = min(width - 1, y + 1)
-        if act_dir == 2:  # down
-            y = max(0, y - 1)
-        if act_dir == 3:  # left
-            x = max(0, x - 1)
-        if act_dir == 4:  # right
-            x = min(height - 1, x + 1)
-        tmp_current_locs[i] = torch.tensor([x, y])
+    # 获取每个agent位置的动作
+    act_dirs = action[current_locations[:, 0], current_locations[:, 1]]
+    # 创建移动方向的掩码
+    up_mask = (act_dirs == 1).to(torch.int32)
+    down_mask = (act_dirs == 2).to(torch.int32)
+    left_mask = (act_dirs == 3).to(torch.int32)
+    right_mask = (act_dirs == 4).to(torch.int32)
+    # 一次性更新所有agent的位置
+    tmp_current_locs[:, 1] += up_mask
+    tmp_current_locs[:, 1] -= down_mask
+    tmp_current_locs[:, 0] -= left_mask
+    tmp_current_locs[:, 0] += right_mask
+
+    # 使用与张量相同设备上的边界值进行裁剪
+    tmp_current_locs[:, 0].clamp_(0, torch.tensor(height - 1, device=device))
+    tmp_current_locs[:, 1].clamp_(0, torch.tensor(width - 1, device=device))
+
     collision_flag_per_agent = torch.zeros(agent_num, dtype=torch.bool)
     while True:
         collision_flag = False
@@ -131,8 +137,8 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     for i in range(agent_num):
         current_pos = torch.where(feature[1] == i + 1)  # +1 because agent IDs start from 1
         goal_pos = torch.where(feature[2] == i + 1)
-        current_locations.append(torch.tensor([current_pos[0][0], current_pos[1][0]]))
-        goal_locations.append(torch.tensor([goal_pos[0][0], goal_pos[1][0]]))
+        current_locations.append(torch.tensor([current_pos[0][0], current_pos[1][0]], device=device))
+        goal_locations.append(torch.tensor([goal_pos[0][0], goal_pos[1][0]], device=device))
     
     current_locations = torch.stack(current_locations)
     goal_locations = torch.stack(goal_locations)
