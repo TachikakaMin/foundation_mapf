@@ -67,7 +67,7 @@ def generate_maze(
     width = width // 2 * 2 + 2
     # 准备文件路径
     output_dir = "data/map_files/"
-    maze_dir_name = f"maze-{height}-{width}-{int(obstacle_density*100)}"
+    maze_dir_name = f"maze-{height}-{width}-{int(obstacle_density*100)}-{wall_components}-{int(go_straight*100)}"
     output_map_dir = os.path.join(output_dir, maze_dir_name)
     output_path = os.path.join(output_map_dir, f"{maze_dir_name}-{seed}.map")
 

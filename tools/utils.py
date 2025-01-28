@@ -120,8 +120,8 @@ def parse_file_name(file_name):
             map_file_path = os.path.join(dir_prefix, "map_files", f"{map_name}.map")
     else:
         name_parts = path_name.split("-")
-        map_name = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}-{name_parts[4]}"
-        map_folder = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}"
+        map_name = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}-{name_parts[4]}-{name_parts[5]}-{name_parts[6]}"
+        map_folder = f"{name_parts[0]}-{name_parts[1]}-{name_parts[2]}-{name_parts[3]}-{name_parts[4]}-{name_parts[5]}"
         map_file_path = os.path.join(dir_prefix, "map_files", map_folder, f"{map_name}.map")
     return map_file_path, path_name
 
