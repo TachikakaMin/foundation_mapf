@@ -1,6 +1,7 @@
 import torch
 from tqdm import tqdm
 from .utils import construct_input_feature, parse_file_name
+import time
 
 
 def statistic_result(current_locations, goal_locations):
@@ -149,6 +150,13 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     log_print(f"Start Goal Distance: {current_goal_distance:.4f}")
     temperature = torch.ones(agent_num)
     all_paths.append(current_locations.cpu().numpy())
+
+    # Initialize statistics
+    steps_to_target = torch.zeros(agent_num, dtype=torch.int32)
+    agent_reached_target = torch.zeros(agent_num, dtype=torch.bool)
+    agent_times = torch.zeros(agent_num, dtype=torch.float32)
+    total_start_time = time.time()
+
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
         feature = feature.to(device)
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
@@ -170,8 +178,21 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
             feature_type
         )
         all_paths.append(current_locations.cpu().numpy())
+
+        # Update statistics
+        for j in range(agent_num):
+            if not agent_reached_target[j] and torch.equal(current_locations[j], goal_locations[j]):
+                agent_reached_target[j] = True
+                steps_to_target[j] = i + 1
+                agent_times[j] = time.time() - total_start_time
+                log_print(f"Agent {j} reached target in {steps_to_target[j]} steps and {agent_times[j]:.4f} seconds")
+
         if torch.equal(current_locations, goal_locations):
             break
+
+    total_running_time = time.time() - total_start_time
+    log_print(f"Total Running Time: {total_running_time:.4f} seconds")
+
     current_goal_distance, success_rate = statistic_result(
         current_locations, goal_locations
     )
