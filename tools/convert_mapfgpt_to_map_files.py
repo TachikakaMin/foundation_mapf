@@ -32,6 +32,7 @@ def main():
         ("MAPF_GPT_eval_configs/03-warehouse/maps.yaml", "data_mapf_gpt/map_files/03-warehouse"),
         ("MAPF_GPT_eval_configs/04-movingai/maps.yaml", "data_mapf_gpt/map_files/04-movingai"),
         ("MAPF_GPT_eval_configs/05-puzzles/maps.yaml", "data_mapf_gpt/map_files/05-puzzles"),
+        ("MAPF_GPT_eval_configs/06-pathfinding/maps.yaml", "data_mapf_gpt/map_files/06-pathfinding"),
     ]
     
     # Process each YAML file
