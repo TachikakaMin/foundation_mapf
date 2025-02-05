@@ -115,12 +115,33 @@ def sample_action(
     return action
 
 
+def calculate_metrics(current_locations, goal_locations, steps_to_target, agent_num, all_densities, total_running_time):
+    """Calculate all metrics for path formation evaluation."""
+    current_goal_distance, success_rate = statistic_result(current_locations, goal_locations)
+    
+    metrics = {
+        'total_cost': steps_to_target.sum() + agent_num,  # Sum of cost
+        'ep_length': sum(steps_to_target) / agent_num + 1,  # Average episode length
+        'makespan': max(steps_to_target),  # Makespan
+        'isr': success_rate,  # Individual Success Rate
+        'csr': 1 if success_rate == 1 else 0,  # Complete Success Rate
+        'final_distance': current_goal_distance,
+        'avg_density': sum(all_densities) / len(all_densities) if all_densities else 0,
+        'total_time': total_running_time
+    }
+    
+    return metrics
+
+
 def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None):
     def log_print(msg):
         print(msg)
         if log_file:
             with open(log_file, "a") as f:
                 f.write(msg + "\n")
+                f.flush()
+
+    # Initialize data
     all_paths = []
     sample_data = val_loader.dataset[idx]
     feature = sample_data["feature"]
@@ -132,11 +153,10 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     map_data = feature[0]
     distance_map = val_loader.dataset.get_distance_map(map_name)
 
-    # Get locations based on agent IDs from feature maps
-    goal_locations = []
-    current_locations = []
+    # Get initial locations
+    current_locations, goal_locations = [], []
     for i in range(agent_num):
-        current_pos = torch.where(feature[1] == i + 1)  # +1 because agent IDs start from 1
+        current_pos = torch.where(feature[1] == i + 1)
         goal_pos = torch.where(feature[2] == i + 1)
         current_locations.append(torch.tensor([current_pos[0][0], current_pos[1][0]], device=device))
         goal_locations.append(torch.tensor([goal_pos[0][0], goal_pos[1][0]], device=device))
@@ -144,58 +164,83 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     current_locations = torch.stack(current_locations)
     goal_locations = torch.stack(goal_locations)
     
-    current_goal_distance, _ = statistic_result(
-        current_locations, goal_locations
-    )
-    log_print(f"Start Goal Distance: {current_goal_distance:.4f}")
+    # Initialize tracking variables
     temperature = torch.ones(agent_num)
-    all_paths.append(current_locations.cpu().numpy())
-
-    # Initialize statistics
     steps_to_target = torch.zeros(agent_num, dtype=torch.int32)
     agent_reached_target = torch.zeros(agent_num, dtype=torch.bool)
-    agent_times = torch.zeros(agent_num, dtype=torch.float32)
-    total_start_time = time.time()
+    all_densities = []
+    total_running_time = 0
+    all_paths.append(current_locations.cpu().numpy())
 
+    # Main loop
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
+        # Model inference and action
+        start_time = time.time()
         feature = feature.to(device)
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             logits, _ = model.module(feature.unsqueeze(0))
         else:
             logits, _ = model(feature.unsqueeze(0))
-        action = sample_action(
-            logits, current_locations, temperature, feature, action_choice
-        )
-        current_locations, temperature = move_agent(
-            action, map_data, current_locations, temperature
-        )
-        feature = construct_input_feature(
-            map_data,
-            current_locations,
-            goal_locations,
-            distance_map,
-            feature.shape[0],
-            feature_type
-        )
+        action = sample_action(logits, current_locations, temperature, feature, action_choice)
+        total_running_time += time.time() - start_time
+
+        # Move agents
+        current_locations, temperature = move_agent(action, map_data, current_locations, temperature)
+        feature = construct_input_feature(map_data, current_locations, goal_locations, 
+                                       distance_map, feature.shape[0], feature_type)
         all_paths.append(current_locations.cpu().numpy())
 
         # Update statistics
         for j in range(agent_num):
             if not agent_reached_target[j] and torch.equal(current_locations[j], goal_locations[j]):
                 agent_reached_target[j] = True
-                steps_to_target[j] = i + 1
-                agent_times[j] = time.time() - total_start_time
-                log_print(f"Agent {j} reached target in {steps_to_target[j]} steps and {agent_times[j]:.4f} seconds")
+                steps_to_target[j] = i
+
+        # Calculate density
+        agent_densities = calculate_step_density(current_locations, map_data)
+        if agent_densities:
+            all_densities.append(sum(agent_densities) / len(agent_densities))
 
         if torch.equal(current_locations, goal_locations):
             break
 
-    total_running_time = time.time() - total_start_time
-    log_print(f"Total Running Time: {total_running_time:.4f} seconds")
+    # Calculate final metrics
+    metrics = calculate_metrics(current_locations, goal_locations, steps_to_target, 
+                              agent_num, all_densities, total_running_time)
+    
+    # Log results
+    # log_print(f"Total Running Time: {metrics['total_time']:.4f} seconds")
+    # log_print(f"Average Density: {metrics['avg_density']:.4f}")
+    # log_print(f"End Goal Distance: {metrics['final_distance']:.4f}, Success Rate: {metrics['isr']:.4f}")
+    log_print(f"metrics: {metrics}")
 
-    current_goal_distance, success_rate = statistic_result(
-        current_locations, goal_locations
-    )
-    log_print(f"End Goal Distance: {current_goal_distance:.4f}, Success Rate: {success_rate:.4f}")
+    return all_paths, goal_locations.cpu().numpy(), metrics['final_distance'], file_name
 
-    return all_paths, goal_locations.cpu().numpy(), current_goal_distance, file_name
+
+def calculate_step_density(current_locations, map_data):
+    """Calculate density for each agent's local observation in current step."""
+    agent_densities = []
+    agent_positions = torch.zeros_like(map_data)
+    for pos in current_locations:
+        agent_positions[pos[0], pos[1]] = 1
+
+    for agent_pos in current_locations:
+        x, y = agent_pos[0], agent_pos[1]
+        window_size = 5
+        half_size = window_size // 2
+        
+        x_min = max(0, x - half_size)
+        x_max = min(map_data.shape[0], x + half_size + 1)
+        y_min = max(0, y - half_size)
+        y_max = min(map_data.shape[1], y + half_size + 1)
+        
+        local_map = map_data[x_min:x_max, y_min:y_max]
+        local_agents = agent_positions[x_min:x_max, y_min:y_max]
+        
+        traversable_cells = torch.sum(local_map == 0).item()
+        if traversable_cells > 0:
+            occupied_cells = torch.sum(local_agents).item()
+            local_density = occupied_cells / traversable_cells
+            agent_densities.append(local_density)
+    
+    return agent_densities
