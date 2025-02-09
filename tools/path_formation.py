@@ -166,7 +166,7 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     
     # Initialize tracking variables
     temperature = torch.ones(agent_num)
-    steps_to_target = torch.zeros(agent_num, dtype=torch.int32)
+    steps_to_target = torch.full((agent_num,), 1048, dtype=torch.int32)  # 初始化为 1048 表示未到达目标
     agent_reached_target = torch.zeros(agent_num, dtype=torch.bool)
     all_densities = []
     total_running_time = 0

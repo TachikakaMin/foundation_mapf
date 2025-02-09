@@ -106,7 +106,7 @@ def parse_file_name(file_name):
     if "mapf_gpt" in file_name:
         dir_prefix_2 = file_name.split("/")[2]
         name_parts = path_name.split("-")
-        if "path" in file_name:
+        if ".path" in file_name:
             map_name = "-".join(name_parts[:-2])
         else:
             map_name = "-".join(name_parts[:-3])
