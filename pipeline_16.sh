@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # generate map files
 python data_generation_LACAM/maze_generator.py -n 10 -he 14 -w 14 -d 0.1
 python data_generation_LACAM/random_generator.py -n 10 -he 16 -w 16 -d 0.2

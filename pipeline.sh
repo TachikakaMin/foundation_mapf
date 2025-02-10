@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 height=32
 width=32
 # generate map files
