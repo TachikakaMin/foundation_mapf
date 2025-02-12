@@ -50,6 +50,12 @@ def main():
         default=False,
         help="Show the path",
     )
+    parser.add_argument(
+        "--lifelong",
+        action="store_true",
+        default=False,
+        help="Lifelong learning",
+    )
     args = parser.parse_args()
 
     # 设置随机种子以确保可重复性
@@ -90,7 +96,7 @@ def main():
     log_file_path = os.path.join(args.output_dir, args.dataset_paths[0].split("/")[2] + "_log.txt")
     for i in tqdm(range(len(val_loader)), desc="Evaluating"):
         all_paths, all_goal_locations, _, file_name = path_formation(
-            model, val_loader, i, device, args.feature_type, steps=args.steps, log_file=log_file_path
+            model, val_loader, i, device, args.feature_type, steps=args.steps, log_file=log_file_path, lifelong=args.lifelong
         )
     visualize_path(all_paths, all_goal_locations, file_name, video_path=args.output_dir, show=args.show)
 

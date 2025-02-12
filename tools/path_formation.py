@@ -142,7 +142,7 @@ def generate_from_possible_targets(possible_positions, position):
     return possible_positions[idx]
 
 
-def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None, lifelong=True):
+def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None, lifelong=False):
     def log_print(msg):
         print(msg)
         if log_file:
@@ -160,7 +160,7 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     agent_num = sample_data["mask"].sum()
     log_print(f"Path Formation: {path_name}")
 
-    map_data = feature[0]
+    map_data = feature[0].to(device)
     distance_map = val_loader.dataset.get_distance_map(map_name)
 
     # Get initial locations
