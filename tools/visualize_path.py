@@ -11,11 +11,11 @@ def revert_xy(paths):
     return [[[y, x] for x, y in path] for path in paths]
 
 
-def visualize_path(all_paths, goal_locations, file_name, video_path=None, show=False):
+def visualize_path(all_paths, all_goal_locations, file_name, video_path=None, show=False):
     all_paths = revert_xy(all_paths)
-    goal_locations = revert_xy(goal_locations)
+    all_goal_locations = revert_xy(all_goal_locations)
     map_name, path_name = parse_file_name(file_name)
-    agent_num = len(goal_locations)
+    agent_num = len(all_paths[0])
     map_data = read_map(map_name)
     height, width = map_data.shape
     steps = len(all_paths)
@@ -46,31 +46,15 @@ def visualize_path(all_paths, goal_locations, file_name, video_path=None, show=F
     agents_scatter = {}
     agents_lines = {}
     agents_annotations = {}
-    agents_goal_lines = {}  # 新增：存储目标连线
+    agents_goal_lines = {}
+    agents_goal_scatter = {}  # New: store goal markers
+    agents_goal_annotations = {}  # New: store goal annotations
 
     # Initialize scatter plots and lines for each agent
     for agent_id in range(agent_num):
         color = colors[agent_id % len(colors)]
-        goal_pos = goal_locations[agent_id]
-        # Draw goal (star) markers
-        ax.scatter(
-            goal_pos[0],
-            goal_pos[1],
-            edgecolor=color,
-            facecolor="none",
-            marker="*",
-            s=100,
-        )
-        ax.annotate(
-            str(agent_id),
-            xy=(goal_pos[0], goal_pos[1]),
-            xytext=(0, -5),
-            textcoords="offset points",
-            color="black",
-            ha="center",
-            va="bottom",
-            fontsize=8,
-        )
+        # Remove static goal visualization code and just initialize the objects
+        
         # Initialize current position scatter
         scatter = ax.scatter([], [], c=color, s=50)
         agents_scatter[agent_id] = scatter
@@ -91,8 +75,32 @@ def visualize_path(all_paths, goal_locations, file_name, video_path=None, show=F
         )
         annotation.set_visible(False)
         agents_annotations[agent_id] = annotation
+        initial_goal_pos = all_goal_locations[0][agent_id]
+        # Initialize goal scatter
+        goal_scatter = ax.scatter(
+            initial_goal_pos[0],
+            initial_goal_pos[1],
+            edgecolor=color,
+            facecolor="none",
+            marker="*",
+            s=100,
+        )
+        agents_goal_scatter[agent_id] = goal_scatter
 
-        # 新增：初始化目标连线
+        # Initialize goal annotation
+        goal_annotation = ax.annotate(
+            str(agent_id),
+            xy=(0, 0),  # Use initial goal position
+            xytext=(0, 0),
+            color="black",
+            ha="center",
+            va="center",
+            fontsize=8,
+        )
+        goal_annotation.set_visible(False)
+        agents_goal_annotations[agent_id] = goal_annotation
+
+        # Initialize goal line
         (goal_line,) = ax.plot([], [], c=color, linestyle='--', alpha=0.5)
         agents_goal_lines[agent_id] = goal_line
 
@@ -115,15 +123,24 @@ def visualize_path(all_paths, goal_locations, file_name, video_path=None, show=F
     def update(frame, update_slider=True):
         frame_text.set_text(f"Frame: {frame}")
         if update_slider:
-            frame_slider.set_val(frame)  # 只在需要时更新滑块位置
+            frame_slider.set_val(frame)
         artists = []
         for agent_id in range(agent_num):
             current_pos = all_paths[frame][agent_id]
-            goal_pos = goal_locations[agent_id]  # 目标位置
+            goal_pos = all_goal_locations[frame][agent_id]  # Updated: get current frame's goal position
 
             # Update agent position
             agents_scatter[agent_id].set_offsets([[current_pos[0], current_pos[1]]])
             artists.append(agents_scatter[agent_id])
+
+            # Update goal position
+            agents_goal_scatter[agent_id].set_offsets([[goal_pos[0], goal_pos[1]]])
+            artists.append(agents_goal_scatter[agent_id])
+
+            # Update goal annotation
+            agents_goal_annotations[agent_id].set_position((goal_pos[0], goal_pos[1]))
+            agents_goal_annotations[agent_id].set_visible(True)
+            artists.append(agents_goal_annotations[agent_id])
 
             # Update agent ID annotation
             agents_annotations[agent_id].set_position((current_pos[0], current_pos[1]))
@@ -137,7 +154,7 @@ def visualize_path(all_paths, goal_locations, file_name, video_path=None, show=F
             agents_lines[agent_id].set_data(x_coords, y_coords)
             artists.append(agents_lines[agent_id])
 
-            # 新增：更新目标连线
+            # Update goal line
             agents_goal_lines[agent_id].set_data(
                 [current_pos[0], goal_pos[0]], 
                 [current_pos[1], goal_pos[1]]

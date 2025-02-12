@@ -2,6 +2,7 @@ import torch
 from tqdm import tqdm
 from .utils import construct_input_feature, parse_file_name
 import time
+import numpy as np
 
 
 def statistic_result(current_locations, goal_locations):
@@ -115,7 +116,7 @@ def sample_action(
     return action
 
 
-def calculate_metrics(current_locations, goal_locations, steps_to_target, agent_num, all_densities, total_running_time):
+def calculate_metrics(current_locations, goal_locations, steps_to_target, agent_num, all_densities, total_running_time, max_step, number_of_agent_reached_target):
     """Calculate all metrics for path formation evaluation."""
     current_goal_distance, success_rate = statistic_result(current_locations, goal_locations)
     
@@ -127,13 +128,21 @@ def calculate_metrics(current_locations, goal_locations, steps_to_target, agent_
         'csr': 1 if success_rate == 1 else 0,  # Complete Success Rate
         'final_distance': current_goal_distance,
         'avg_density': sum(all_densities) / len(all_densities) if all_densities else 0,
-        'total_time': total_running_time
+        'total_time': total_running_time,
+        'throughput': number_of_agent_reached_target / max_step
     }
     
     return metrics
 
 
-def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None):
+def generate_from_possible_targets(possible_positions, position):
+    idx = np.random.choice(len(possible_positions))
+    while tuple(possible_positions[idx]) == position:
+        idx = np.random.choice(len(possible_positions))
+    return possible_positions[idx]
+
+
+def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None, lifelong=True):
     def log_print(msg):
         print(msg)
         if log_file:
@@ -143,6 +152,7 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
 
     # Initialize data
     all_paths = []
+    all_goal_locations = []
     sample_data = val_loader.dataset[idx]
     feature = sample_data["feature"]
     file_name = sample_data["file_name"]
@@ -171,6 +181,9 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     all_densities = []
     total_running_time = 0
     all_paths.append(current_locations.cpu().numpy())
+    all_goal_locations.append(goal_locations.cpu().numpy().copy())
+    number_of_agent_reached_target = 0
+    # Initialize random generator for lifelong testing
 
     # Main loop
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
@@ -190,31 +203,37 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
                                        distance_map, feature.shape[0], feature_type)
         all_paths.append(current_locations.cpu().numpy())
 
-        # Update statistics
+        possible_positions = torch.nonzero((map_data+feature[2]) == 0, as_tuple=False).tolist()
+        # Update statistics and assign new goals if lifelong is enabled
         for j in range(agent_num):
             if not agent_reached_target[j] and torch.equal(current_locations[j], goal_locations[j]):
                 agent_reached_target[j] = True
                 steps_to_target[j] = i
-
+                number_of_agent_reached_target += 1
+                if lifelong:
+                    new_goal = generate_from_possible_targets(possible_positions, current_locations[j].tolist())
+                    goal_locations[j] = torch.tensor(new_goal, device=device)
+                    agent_reached_target[j] = False  # Reset target reached status
+        # Create a deep copy of goal_locations when appending
+        all_goal_locations.append(goal_locations.cpu().numpy().copy())
         # Calculate density
         agent_densities = calculate_step_density(current_locations, map_data)
         if agent_densities:
             all_densities.append(sum(agent_densities) / len(agent_densities))
 
-        if torch.equal(current_locations, goal_locations):
+        if not lifelong and torch.equal(current_locations, goal_locations):
             break
 
     # Calculate final metrics
     metrics = calculate_metrics(current_locations, goal_locations, steps_to_target, 
-                              agent_num, all_densities, total_running_time)
+                              agent_num, all_densities, total_running_time, steps, number_of_agent_reached_target)
     
     # Log results
     # log_print(f"Total Running Time: {metrics['total_time']:.4f} seconds")
     # log_print(f"Average Density: {metrics['avg_density']:.4f}")
     # log_print(f"End Goal Distance: {metrics['final_distance']:.4f}, Success Rate: {metrics['isr']:.4f}")
     log_print(f"metrics: {metrics}")
-
-    return all_paths, goal_locations.cpu().numpy(), metrics['final_distance'], file_name
+    return all_paths, all_goal_locations, metrics['final_distance'], file_name
 
 
 def calculate_step_density(current_locations, map_data):

@@ -89,10 +89,10 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     log_file_path = os.path.join(args.output_dir, args.dataset_paths[0].split("/")[2] + "_log.txt")
     for i in tqdm(range(len(val_loader)), desc="Evaluating"):
-        _, _, _, _ = path_formation(
+        all_paths, all_goal_locations, _, file_name = path_formation(
             model, val_loader, i, device, args.feature_type, steps=args.steps, log_file=log_file_path
         )
-    # visualize_path(all_paths, goal_locations, file_name, video_path=args.output_dir, show=args.show)
+    visualize_path(all_paths, all_goal_locations, file_name, video_path=args.output_dir, show=args.show)
 
 
 if __name__ == "__main__":

@@ -64,5 +64,4 @@ python -m tools.convert_lacam_path_to_bin data/path_files
 python train.py -bs 2048 --bilinear -flc 16 -nw 8
 
 # eval
-python eval_test.py --model_path model_checkpoint_epoch_5.pth \
---dataset_paths data/input_data/maze-64-64-10-10-0/maze-64-64-10-10-0-0-64/maze-64-64-10-10-0-0-64-0/maze-64-64-10-10-0-0-64-0-0.bin
+python eval_test.py --model_path model_checkpoint_epoch_4.pth --dataset_paths data_mapf_gpt/input_data/01-random/validation-random-seed-000/validation-random-seed-000-8/validation-random-seed-000-8-1/validation-random-seed-000-8-1-0.bin --show
