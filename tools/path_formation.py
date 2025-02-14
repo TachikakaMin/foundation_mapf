@@ -1,6 +1,6 @@
 import torch
 from tqdm import tqdm
-from .utils import construct_input_feature, parse_file_name
+from .utils import construct_input_feature, parse_file_name, read_distance_map
 import time
 import numpy as np
 
@@ -34,29 +34,31 @@ def move_agent(action, map_data, current_locations, temperature):
     tmp_current_locs[:, 1] -= down_mask
     tmp_current_locs[:, 0] -= left_mask
     tmp_current_locs[:, 0] += right_mask
-
     # 使用与张量相同设备上的边界值进行裁剪
     tmp_current_locs[:, 0].clamp_(0, torch.tensor(height - 1, device=device))
     tmp_current_locs[:, 1].clamp_(0, torch.tensor(width - 1, device=device))
-
     collision_flag_per_agent = torch.zeros(agent_num, dtype=torch.bool)
     while True:
         collision_flag = False
-        map_mark = map_data.clone()
-        # First check normal collisions
-        for i in range(agent_num):
-            x, y = tmp_current_locs[i]
-            map_mark[x, y] += 1
-        for i in range(agent_num):
-            cur_x, cur_y = current_locations[i]
-            x, y = tmp_current_locs[i]
-            if map_mark[x, y] > 1:
-                if cur_x != x or cur_y != y:
-                    map_mark[x, y] -= 1
-                    tmp_current_locs[i] = current_locations[i]
-                    collision_flag = True
-                    collision_flag_per_agent[i] = True
-                    # temperature[i] += 1
+        
+        # Create a tensor to count occurrences of each position
+        unique_positions, counts = torch.unique(tmp_current_locs, dim=0, return_counts=True)
+        collision_positions = unique_positions[counts > 1]
+        
+        if len(collision_positions) > 0:
+            # Find all agents that moved to collision positions
+            for collision_pos in collision_positions:
+                # Find agents at this collision position
+                collision_mask = (tmp_current_locs == collision_pos).all(dim=1)
+                colliding_agents = torch.where(collision_mask)[0]
+                
+                # Keep the agent that didn't move (if any), revert others
+                for agent_idx in colliding_agents:
+                    if not torch.equal(current_locations[agent_idx], tmp_current_locs[agent_idx]):
+                        tmp_current_locs[agent_idx] = current_locations[agent_idx]
+                        collision_flag = True
+                        collision_flag_per_agent[agent_idx] = True
+
         
         # Create position mapping: position -> agent_id
         pos_to_new_agent = {tuple(pos.tolist()): i for i, pos in enumerate(tmp_current_locs)}
@@ -69,24 +71,15 @@ def move_agent(action, map_data, current_locations, temperature):
             new_pos = tuple(tmp_current_locs[i].tolist())
             
             if old_pos != new_pos:  # Agent has moved
-                # Check if another agent moved to this agent's old position
                 if new_agent_id := pos_to_new_agent.get(old_pos):
-                    # Check if that agent moved to current agent's new position
                     if tuple(current_locations[new_agent_id].tolist()) == new_pos:
-                        # Swap detected - revert both agents
                         tmp_current_locs[i] = current_locations[i]
                         tmp_current_locs[new_agent_id] = current_locations[new_agent_id]
                         collision_flag = True
                         collision_flag_per_agent[i] = True
-                        collision_flag_per_agent[new_agent_id] = True
-                        # temperature[i] += 1
-                        # temperature[new_agent_id] += 1     
+                        collision_flag_per_agent[new_agent_id] = True  
         if not collision_flag:
             break
-    # for i in range(agent_num):
-    #     if collision_flag_per_agent[i] is False:
-    #         temperature[i] -= 1
-    #         temperature[i] = max(temperature[i], 1)
     return tmp_current_locs, temperature
 
 
@@ -160,16 +153,16 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     agent_num = sample_data["mask"].sum()
     log_print(f"Path Formation: {path_name}")
 
-    map_data = feature[0].to(device)
-    distance_map = val_loader.dataset.get_distance_map(map_name)
+    map_data = feature[0]
+    distance_map = read_distance_map(map_name)
 
     # Get initial locations
     current_locations, goal_locations = [], []
     for i in range(agent_num):
         current_pos = torch.where(feature[1] == i + 1)
         goal_pos = torch.where(feature[2] == i + 1)
-        current_locations.append(torch.tensor([current_pos[0][0], current_pos[1][0]], device=device))
-        goal_locations.append(torch.tensor([goal_pos[0][0], goal_pos[1][0]], device=device))
+        current_locations.append(torch.tensor([current_pos[0][0], current_pos[1][0]]))
+        goal_locations.append(torch.tensor([goal_pos[0][0], goal_pos[1][0]]))
     
     current_locations = torch.stack(current_locations)
     goal_locations = torch.stack(goal_locations)
@@ -183,18 +176,16 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     all_paths.append(current_locations.cpu().numpy())
     all_goal_locations.append(goal_locations.cpu().numpy().copy())
     number_of_agent_reached_target = 0
-    # Initialize random generator for lifelong testing
 
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        model = model.module
+    model.eval()
     # Main loop
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
         # Model inference and action
         start_time = time.time()
-        feature = feature.to(device)
-        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-            logits, _ = model.module(feature.unsqueeze(0))
-        else:
-            logits, _ = model(feature.unsqueeze(0))
-        action = sample_action(logits, current_locations, temperature, feature, action_choice)
+        logits, _ = model(feature.to(device).unsqueeze(0))
+        action = sample_action(logits.cpu(), current_locations, temperature, feature, action_choice)
         total_running_time += time.time() - start_time
 
         # Move agents
@@ -220,7 +211,6 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
         agent_densities = calculate_step_density(current_locations, map_data)
         if agent_densities:
             all_densities.append(sum(agent_densities) / len(agent_densities))
-
         if not lifelong and torch.equal(current_locations, goal_locations):
             break
 

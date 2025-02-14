@@ -1,30 +1,21 @@
 import struct
-import glob
-import os
 from .visualize_path import visualize_path
-from .utils import parse_file_name
 
 
-def parse_bin_path(bin_dir):
-    # Get all bin files sorted by timestep
-    bin_files = sorted(
-        glob.glob(os.path.join(bin_dir, "*.bin")),
-        key=lambda x: int(x.split("-")[-1].split(".")[0]),
-    )
-    if not bin_files:
-        raise ValueError(f"No bin files found in {bin_dir}")
-
+def parse_bin_path(bin_file):
     # Store all positions for path tracking
     all_paths = []
-    for bin_file in bin_files:
-
-        agent_locations = []
-        with open(bin_file, "rb") as f:
-            agent_num = struct.unpack("H", f.read(2))[0]
+    with open(bin_file, "rb") as f:
+        steps = struct.unpack("H", f.read(2))[0]
+        agent_num = struct.unpack("H", f.read(2))[0]
+        for _ in range(steps):
+            agent_locations = []
             for _ in range(agent_num):
-                cur_x, cur_y = struct.unpack("HH", f.read(4))
+                cur_x, cur_y = struct.unpack("BB", f.read(2))
                 agent_locations.append((cur_x, cur_y))
-        all_paths.append(agent_locations)
+            for _ in range(agent_num):
+                action = struct.unpack("B", f.read(1))[0]
+            all_paths.append(agent_locations)
     return all_paths
 
 
@@ -32,9 +23,9 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) != 2:
-        print("Usage: python visualize_bin_path.py <path_to_bin_directory>")
+        print("Usage: python -m tools.visualize_bin_path <path_to_bin_file>")
         sys.exit(1)
-    folder_path = sys.argv[1]
-    all_paths = parse_bin_path(folder_path)
-    goal_locations = all_paths[-1]
-    visualize_path(all_paths, goal_locations, folder_path, show=True)
+    file_name = sys.argv[1]
+    all_paths = parse_bin_path(file_name)
+    goal_locations = [all_paths[-1] for _ in range(len(all_paths))]
+    visualize_path(all_paths, goal_locations, file_name, show=True)

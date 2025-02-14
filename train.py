@@ -15,6 +15,8 @@ import random
 import glob
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+import psutil  # Add this import
+
 
 def evaluate_valid_loss(model, val_loader, loss_fn, device):
     # Set model to evaluation mode
@@ -23,32 +25,52 @@ def evaluate_valid_loss(model, val_loader, loss_fn, device):
     total_agents = 0  # Add step counter
 
     with torch.no_grad():  # Disable gradient calculation
-        for batch in val_loader:
+        for batch in tqdm(val_loader, desc="Evaluating", disable=args.local_rank!=0):
             # Load validation data onto the correct device (CPU/GPU)
             feature = batch["feature"].to(device)
             action_y = batch["action"].to(device)
             mask = batch["mask"].to(device)
-
             # Forward pass
             logits, _ = model(feature)
 
             # Compute the loss and apply mask
             loss = loss_fn(logits, action_y)
-            loss = loss * mask.float()
-            val_loss += loss.sum()
-            total_agents += mask.sum()  # Increment agent counter
+            masked_loss = loss * mask.float()
+            val_loss += masked_loss.detach().sum().item()
+            total_agents += mask.detach().sum().item()  # Increment agent counter
 
     return val_loss / total_agents  # Average the loss by total agents
 
-
 def train(args, model, train_loaders, val_loaders, sample_loader, optimizer, loss_fn, device):
     for epoch in range(1, args.epochs + 1):
-        # Set model to training mode
         model.train()
         train_loss = 0
-        total_agents = 0  # Add step counter
+        total_agents = 0
         for train_loader in train_loaders.values():
-            for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}", disable=args.local_rank!=0):
+            for i, batch in tqdm(enumerate(train_loader), desc=f"Epoch {epoch}/{args.epochs}", disable=args.local_rank!=0, total=len(train_loader)):
+                # # Add per-batch memory print
+                # if i % 100 == 0:  # Print every 100 batches
+                #     torch.cuda.empty_cache()
+        
+                #     # Force garbage collection
+                #     import gc
+                #     gc.collect()
+                #     total_memory = 0
+                #     main_process = psutil.Process()
+                #     processes = [main_process] + main_process.children(recursive=True)
+                #     print(f"\nBatch {i} memory usage:")
+                #     print(f"Number of processes: {len(processes)}")
+                    
+                #     for proc in processes:
+                #         try:
+                #             memory_info = proc.memory_info()
+                #             total_memory += memory_info.rss
+                #         except (psutil.NoSuchProcess, psutil.AccessDenied):
+                #             continue
+                    
+                #     print(f"Total Memory Used by All Processes: {total_memory / 1024 / 1024:.2f} MB")
+                #     system_memory = psutil.virtual_memory()
+                #     print(f"System Memory Usage: {system_memory.percent}%")
                 # Load data onto the correct device (CPU/GPU)
                 feature = batch["feature"].to(
                     device
@@ -61,18 +83,20 @@ def train(args, model, train_loaders, val_loaders, sample_loader, optimizer, los
 
                 # Compute loss and apply mask
                 loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
-                loss = loss * mask.float()
-                averaged_loss = loss.sum() / mask.sum()  # scalar
-
+                masked_loss = loss * mask.float()
+                averaged_loss = masked_loss.sum() / mask.sum()  # scalar
+                
                 # Backward pass and optimization
                 optimizer.zero_grad()
                 averaged_loss.backward()
+                
+                # Update accumulated loss stats
+                train_loss += masked_loss.detach().sum().item()
+                total_agents += mask.detach().sum().item()
 
                 # Gradient clipping to prevent exploding gradients
                 # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 optimizer.step()
-                train_loss += loss.sum()
-                total_agents += mask.sum()  # Increment agent counter
 
         # Average the loss by total number of steps
         train_loss = train_loss / total_agents  # Add this line
@@ -205,7 +229,8 @@ if __name__ == "__main__":
         
         # 为分布式训练添加采样器
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_data) if args.distributed else None
-        
+        val_sampler = torch.utils.data.distributed.DistributedSampler(test_data) if args.distributed else None
+
         train_loader = DataLoader(
             train_data,
             shuffle=(train_sampler is None),
@@ -215,20 +240,21 @@ if __name__ == "__main__":
         )
         val_loader = DataLoader(
             test_data,
-            shuffle=False,
+            shuffle=(val_sampler is None),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
+            sampler=val_sampler
         )
 
         train_loaders[dims] = train_loader
         val_loaders[dims] = val_loader
     
-    sample_data = MAPFDataset(args.sample_data_path, args.feature_dim, args.feature_type)
+    sample_data = MAPFDataset(args.sample_data_path, args.feature_dim, args.feature_type, first_step=True)
     sample_loader = DataLoader(
         sample_data,
         shuffle=False,
         batch_size=1,
-        num_workers=args.num_workers,
+        num_workers=1,
     )
     # train
     train(args, net, train_loaders, val_loaders, sample_loader, optimizer, loss_fn, device)

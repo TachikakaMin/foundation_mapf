@@ -6,8 +6,8 @@ import torch
 import random
 from collections import deque
 from multiprocessing import Pool
-
-NOT_FOUND_PATH = 128
+import re
+NOT_FOUND_PATH = 2048
 
 def get_distance(distance_map, agent_location, goal_location):
     agent_location = (int(agent_location[0]), int(agent_location[1]))
@@ -44,7 +44,6 @@ def construct_input_feature(
         for i in range(agent_num):
             distances[i] = get_distance(distance_map, agent_locations[i], goal_locations[i])
         input_features[3, agent_locations[:, 0], agent_locations[:, 1]] = distances
-
 
     if feature_dim == 6:
         if feature_type == "gradient":
@@ -87,9 +86,9 @@ def construct_input_feature(
                     dy[i] = random.choice([0, 1])
                 else:
                     dy[i] = random.choice([-1, 1])
-
             input_features[4, agent_locations[:, 0], agent_locations[:, 1]] = dx
             input_features[5, agent_locations[:, 0], agent_locations[:, 1]] = dy
+
         else:
             input_features[4, agent_locations[:, 0], agent_locations[:, 1]] = (
                 goal_locations[:, 0] - agent_locations[:, 0]
@@ -147,17 +146,11 @@ def read_map(map_file_path):
 
 
 def read_distance_map(map_file_path):
-    dir_prefix = map_file_path.split("/")[0]
-    file_path = os.path.join(
-        dir_prefix,
-        "distance_maps",
-        f"{os.path.basename(map_file_path).split('.')[0]}.pkl",
-    )
+    file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".pkl")
     return pickle.load(open(file_path, "rb"))
 
 def calculate_single_point_distances(args):
     start, map_data, n, m = args
-    NOT_FOUND_PATH = 128
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
     
     i, j = start
@@ -193,7 +186,7 @@ def create_distance_map(map_data):
     # num_processes = multiprocessing.cpu_count()
     
     # 创建进程池并执行并行计算
-    with Pool() as pool:
+    with Pool(processes=1) as pool:
         results = list(tqdm(
             pool.imap(calculate_single_point_distances, args),
             total=len(accessible_points),
@@ -208,16 +201,10 @@ def create_distance_map(map_data):
 
 def parse_coordinates(coord_str):
     """Parse LACAM coordinates"""
-    # 移除所有空格和换行符
-    coord_str = coord_str.strip()
-    # 移除开头的 "(" 和结尾的 "," 和 ")"
-    coord_str = coord_str.strip("(,)")
-    # 分割成单独的坐标对
-    coord_pairs = coord_str.split("),(")
-    # 解析每个坐标对
-    coords = []
-    for pair in coord_pairs:
-        # 交换x和y
-        y, x = map(int, pair.split(","))
-        coords.append((x, y))
+    # 使用正则表达式提取所有坐标对
+    coord_pairs = re.findall(r"\((\d+),(\d+)\)", coord_str)
+    
+    # 解析每个坐标对，并交换 x 和 y
+    coords = [(int(y), int(x)) for x, y in coord_pairs]
+    
     return coords

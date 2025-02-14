@@ -1,35 +1,32 @@
 import struct
 import numpy as np
 import os
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
+from concurrent.futures import ProcessPoolExecutor
 import glob
 from tqdm import tqdm
-import pickle
-from .utils import create_distance_map, parse_coordinates, parse_file_name, read_map
-
-# Add lock at module level
-distance_map_lock = Lock()
+from .utils import parse_coordinates
 
 def get_action(cur_pos, next_pos):
-    pos_diff = tuple(np.array(next_pos) - np.array(cur_pos))
-    if pos_diff == (0, 1):
-        return 1
-    elif pos_diff == (0, -1):
-        return 2
-    elif pos_diff == (-1, 0):
-        return 3
-    elif pos_diff == (1, 0):
-        return 4
-    else:
-        return 0
+    # 计算差值
+    dx = next_pos[0] - cur_pos[0]
+    dy = next_pos[1] - cur_pos[1]
+    
+    # 使用字典映射差值到动作
+    action_map = {
+        (0, 1): 1,   # 右
+        (0, -1): 2,  # 左
+        (-1, 0): 3,  # 上
+        (1, 0): 4,   # 下
+    }
+    
+    # 返回对应的动作，如果没有匹配则返回 0
+    return action_map.get((dx, dy), 0)
     
 def convert_path_to_bin(file_name):
-    map_name, path_name = parse_file_name(file_name)
-    output_dir = file_name.split(".")[0].replace("path_files", "input_data")
-    if os.path.exists(output_dir) and os.listdir(output_dir):
+    output_file = file_name.replace("path_files", "input_data").replace(".path", ".bin")
+    if os.path.exists(output_file):
         return
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # Read path file
     with open(file_name, "r") as f:
@@ -43,71 +40,40 @@ def convert_path_to_bin(file_name):
             break
             
     if solution_line == -1 or solution_line == len(lines) - 1:
-        print(f"Error: solution line not found in file: {file_name}")
+        # 删除文件
+        os.remove(file_name)
         return
-    agent_num = len(parse_coordinates(lines[solution_line+1].split(":")[1]))
-    paths = [[] for _ in range(agent_num)]
+    paths = []
     for line in lines[solution_line + 1 :]:
         # Parse coordinates for each timestep
         coords = parse_coordinates(line.split(":")[1])
-        for agent_id, coord in enumerate(coords):
-            paths[agent_id].append(coord)
+        paths.append(coords)
 
-    # For each timestep, create a binary file
-    steps = len(paths[0])
-    for t in range(steps):
-        output_file = os.path.join(output_dir, f"{path_name}-{t}.bin")
-        with open(output_file, "wb") as f:
-            f.write(struct.pack("H", agent_num))
-            # Write current positions and goals for each agent
+    # Write all steps to a single binary file
+    with open(output_file, "wb") as f:
+        steps = len(paths)
+        agent_num = len(paths[0])
+        f.write(struct.pack("HH", steps, agent_num))  # Write steps and agent_num (2 bytes each)
+        
+        for t in range(steps):
+            # Write current positions
             for agent_id in range(agent_num):
-                cur_pos = paths[agent_id][t]
-                f.write(
-                    struct.pack(
-                        "HH",
-                        cur_pos[0],
-                        cur_pos[1],  # Current position
-                    )
-                )
+                cur_pos = paths[t][agent_id]
+                f.write(struct.pack("BB", cur_pos[0], cur_pos[1]))  # 1 byte each
+            
+            # Write actions
             for agent_id in range(agent_num):
-                goal = paths[agent_id][-1]
-                f.write(
-                    struct.pack(
-                        "HH",
-                        goal[0],
-                        goal[1],  # Goal position
-                    )
-                )
-            for agent_id in range(agent_num):
-                action = 0
-                cur_pos = paths[agent_id][t]
-                next_pos = paths[agent_id][t + 1] if t + 1 < steps else cur_pos
+                cur_pos = paths[t][agent_id]
+                next_pos = paths[t + 1][agent_id] if t + 1 < steps else cur_pos
                 action = get_action(cur_pos, next_pos)
-                f.write(struct.pack("H", action))
-
-    dir_prefix = map_name.split("/")[0]
-    distance_map_path = os.path.join(
-        dir_prefix,
-        "distance_maps",
-        f"{os.path.basename(map_name).split('.')[0]}.pkl",
-    )
-    
-    if not os.path.exists(distance_map_path):
-        # Add lock around distance map creation and saving
-        with distance_map_lock:
-            # Check again in case another thread created it while we were waiting
-            if not os.path.exists(distance_map_path):
-                map_data = read_map(map_name)
-                distance_map = create_distance_map(map_data)
-                os.makedirs(os.path.dirname(distance_map_path), exist_ok=True)
-                pickle.dump(distance_map, open(distance_map_path, "wb"))
+                f.write(struct.pack("B", action))  # 1 byte
 
 if __name__ == "__main__":
     import sys
 
     if len(sys.argv) != 2:
         print(
-            "Usage: python convert_lacam_path_to_bin.py <path_to_lacam_result_file_dir>"
+            "Usage: python -m tools.convert_lacam_path_to_bin <path_to_lacam_result_file_dir>"
         )
         sys.exit(1)
 
@@ -121,7 +87,7 @@ if __name__ == "__main__":
 
     print(f"Found {len(path_files)} .path files to process")
 
-    with ThreadPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         list(
             tqdm(
                 executor.map(convert_path_to_bin, path_files),

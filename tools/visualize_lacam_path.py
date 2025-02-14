@@ -28,9 +28,9 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) != 2:
-        print("Usage: python visualize_lacam_path.py <path_to_lacam_result_file>")
+        print("Usage: python -m tools.visualize_lacam_path <path_to_lacam_result_file>")
         sys.exit(1)
     file_name = sys.argv[1]
     all_paths = parse_lacam_file(file_name)
-    goal_locations = all_paths[-1]
+    goal_locations = [all_paths[-1] for _ in range(len(all_paths))]
     visualize_path(all_paths, goal_locations, file_name, show=True)
