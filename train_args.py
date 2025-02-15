@@ -65,7 +65,7 @@ def get_args():
     parser.add_argument(
         "--distributed", action="store_true", help="Enable distributed training"
     )
-
+    parser.add_argument("--model_path", type=str, default=None, help="Path to the model file")
     return parser.parse_args()
 
 

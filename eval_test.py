@@ -84,7 +84,7 @@ def main():
     else:
         input_files = args.dataset_paths
     # 准备验证数据集
-    test_dataset = MAPFDataset(input_files, args.feature_dim, args.feature_type)
+    test_dataset = MAPFDataset(input_files, args.feature_dim, args.feature_type, first_step=True)
     val_loader = DataLoader(
         test_dataset,
         batch_size=1,

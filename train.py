@@ -161,6 +161,8 @@ if __name__ == "__main__":
         net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear)
     elif args.model == "cnn":
         net = CNN(n_channels=args.feature_dim, n_classes=args.action_dim)
+    if args.model_path:
+        net.load_state_dict(torch.load(args.model_path, map_location=device))
     net.to(device)
     # 如果使用分布式训练，将模型包装为DDP模型
     if args.distributed:
