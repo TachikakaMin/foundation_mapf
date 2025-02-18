@@ -23,6 +23,7 @@ def construct_input_feature(
     distance_map,
     feature_dim,
     feature_type,
+    previous_agent_locations=None,
 ):
     height, width = map_data.shape
     agent_num = agent_locations.shape[0]
@@ -38,51 +39,140 @@ def construct_input_feature(
     agent_indices = torch.arange(1, agent_num + 1, dtype=torch.float32, device=device)
     input_features[1, agent_locations[:, 0], agent_locations[:, 1]] = agent_indices
     input_features[2, goal_locations[:, 0], goal_locations[:, 1]] = agent_indices
-    if feature_dim >= 4:
+    if feature_dim == 4:
         # 批量计算距离
         distances = torch.zeros(agent_num, dtype=torch.float32, device=device)
         for i in range(agent_num):
             distances[i] = get_distance(distance_map, agent_locations[i], goal_locations[i])
         input_features[3, agent_locations[:, 0], agent_locations[:, 1]] = distances
-
-    if feature_dim == 6:
+    if feature_dim == 5:
         if feature_type == "gradient":
             dx = torch.zeros(agent_num, dtype=torch.float32, device=device)
             dy = torch.zeros(agent_num, dtype=torch.float32, device=device)
             for i in range(agent_num):
-                left_distances = get_distance(distance_map, (agent_locations[i, 0] - 1, agent_locations[i, 1]), goal_locations[i])-distances[i]
-                right_distances = get_distance(distance_map, (agent_locations[i, 0] + 1, agent_locations[i, 1]), goal_locations[i])-distances[i]
-                up_distances = get_distance(distance_map, (agent_locations[i, 0], agent_locations[i, 1] + 1), goal_locations[i])-distances[i]
-                down_distances = get_distance(distance_map, (agent_locations[i, 0], agent_locations[i, 1] - 1), goal_locations[i])-distances[i]
-                if left_distances > 0 and right_distances > 0:
+                left_position = (agent_locations[i, 0] - 1, agent_locations[i, 1])
+                left_distances = get_distance(distance_map, left_position, goal_locations[i])
+                if any((left_position == agent).all() for agent in agent_locations):
+                    left_distances = NOT_FOUND_PATH
+                delta_left_distances = left_distances - distances[i]
+                
+                right_position = (agent_locations[i, 0] + 1, agent_locations[i, 1])
+                right_distances = get_distance(distance_map, right_position, goal_locations[i])
+                if any((right_position == agent).all() for agent in agent_locations):
+                    right_distances = NOT_FOUND_PATH
+                delta_right_distances = right_distances - distances[i]
+
+                up_position = (agent_locations[i, 0], agent_locations[i, 1] + 1)
+                up_distances = get_distance(distance_map, up_position, goal_locations[i])
+                if any((up_position == agent).all() for agent in agent_locations):
+                    up_distances = NOT_FOUND_PATH
+                delta_up_distances = up_distances - distances[i]
+
+                down_position = (agent_locations[i, 0], agent_locations[i, 1] - 1)
+                down_distances = get_distance(distance_map, down_position, goal_locations[i])
+                if any((down_position == agent).all() for agent in agent_locations):
+                    down_distances = NOT_FOUND_PATH
+                delta_down_distances = down_distances - distances[i]
+                
+                if delta_left_distances > 0 and delta_right_distances > 0:
                     dx[i] = 0
-                elif left_distances >= 0 and right_distances < 0:
+                elif delta_left_distances >= 0 and delta_right_distances < 0:
                     dx[i] = 1
-                elif left_distances < 0 and right_distances >= 0:
+                elif delta_left_distances < 0 and delta_right_distances >= 0:
                     dx[i] = -1
-                elif left_distances < 0 and right_distances < 0:
+                elif delta_left_distances < 0 and delta_right_distances < 0:
                     dx[i] = random.choice([-1, 1])
-                elif left_distances == 0 and right_distances == 0:
+                elif delta_left_distances == 0 and delta_right_distances == 0:
                     dx[i] = random.choice([-1, 0, 1])
-                elif left_distances == 0 and right_distances > 0:
+                elif delta_left_distances == 0 and delta_right_distances > 0:
                     dx[i] = random.choice([0, -1])
-                elif left_distances > 0 and right_distances == 0:
+                elif delta_left_distances > 0 and delta_right_distances == 0:
                     dx[i] = random.choice([0, 1])
                 else:
                     dx[i] = random.choice([-1, 1])
-                if down_distances > 0 and up_distances > 0:
+                if delta_down_distances > 0 and delta_up_distances > 0:
                     dy[i] = 0
-                elif down_distances >= 0 and up_distances < 0:
+                elif delta_down_distances >= 0 and delta_up_distances < 0:
                     dy[i] = 1
-                elif down_distances < 0 and up_distances >= 0:
+                elif delta_down_distances < 0 and delta_up_distances >= 0:
                     dy[i] = -1
-                elif down_distances < 0 and up_distances < 0:
+                elif delta_down_distances < 0 and delta_up_distances < 0:
                     dy[i] = random.choice([-1, 1])
-                elif down_distances == 0 and up_distances == 0:
+                elif delta_down_distances == 0 and delta_up_distances == 0:
                     dy[i] = random.choice([-1, 0, 1])
-                elif down_distances == 0 and up_distances > 0:
+                elif delta_down_distances == 0 and delta_up_distances > 0:
                     dy[i] = random.choice([-1, 0])
-                elif down_distances > 0 and up_distances == 0:
+                elif delta_down_distances > 0 and delta_up_distances == 0:
+                    dy[i] = random.choice([0, 1])
+                else:
+                    dy[i] = random.choice([-1, 1])
+            input_features[3, agent_locations[:, 0], agent_locations[:, 1]] = dx
+            input_features[4, agent_locations[:, 0], agent_locations[:, 1]] = dy
+
+    if feature_dim == 6:
+        # 批量计算距离
+        distances = torch.zeros(agent_num, dtype=torch.float32, device=device)
+        for i in range(agent_num):
+            distances[i] = get_distance(distance_map, agent_locations[i], goal_locations[i])
+        input_features[3, agent_locations[:, 0], agent_locations[:, 1]] = distances
+        if feature_type == "gradient":
+            dx = torch.zeros(agent_num, dtype=torch.float32, device=device)
+            dy = torch.zeros(agent_num, dtype=torch.float32, device=device)
+            for i in range(agent_num):
+                left_position = (agent_locations[i, 0] - 1, agent_locations[i, 1])
+                left_distances = get_distance(distance_map, left_position, goal_locations[i])
+                if any((left_position == agent).all() for agent in agent_locations):
+                    left_distances = NOT_FOUND_PATH
+                delta_left_distances = left_distances - distances[i]
+                
+                right_position = (agent_locations[i, 0] + 1, agent_locations[i, 1])
+                right_distances = get_distance(distance_map, right_position, goal_locations[i])
+                if any((right_position == agent).all() for agent in agent_locations):
+                    right_distances = NOT_FOUND_PATH
+                delta_right_distances = right_distances - distances[i]
+
+                up_position = (agent_locations[i, 0], agent_locations[i, 1] + 1)
+                up_distances = get_distance(distance_map, up_position, goal_locations[i])
+                if any((up_position == agent).all() for agent in agent_locations):
+                    up_distances = NOT_FOUND_PATH
+                delta_up_distances = up_distances - distances[i]
+
+                down_position = (agent_locations[i, 0], agent_locations[i, 1] - 1)
+                down_distances = get_distance(distance_map, down_position, goal_locations[i])
+                if any((down_position == agent).all() for agent in agent_locations):
+                    down_distances = NOT_FOUND_PATH
+                delta_down_distances = down_distances - distances[i]
+                
+                
+                if delta_left_distances > 0 and delta_right_distances > 0:
+                    dx[i] = 0
+                elif delta_left_distances >= 0 and delta_right_distances < 0:
+                    dx[i] = 1
+                elif delta_left_distances < 0 and delta_right_distances >= 0:
+                    dx[i] = -1
+                elif delta_left_distances < 0 and delta_right_distances < 0:
+                    dx[i] = random.choice([-1, 1])
+                elif delta_left_distances == 0 and delta_right_distances == 0:
+                    dx[i] = random.choice([-1, 0, 1])
+                elif delta_left_distances == 0 and delta_right_distances > 0:
+                    dx[i] = random.choice([0, -1])
+                elif delta_left_distances > 0 and delta_right_distances == 0:
+                    dx[i] = random.choice([0, 1])
+                else:
+                    dx[i] = random.choice([-1, 1])
+                if delta_down_distances > 0 and delta_up_distances > 0:
+                    dy[i] = 0
+                elif delta_down_distances >= 0 and delta_up_distances < 0:
+                    dy[i] = 1
+                elif delta_down_distances < 0 and delta_up_distances >= 0:
+                    dy[i] = -1
+                elif delta_down_distances < 0 and delta_up_distances < 0:
+                    dy[i] = random.choice([-1, 1])
+                elif delta_down_distances == 0 and delta_up_distances == 0:
+                    dy[i] = random.choice([-1, 0, 1])
+                elif delta_down_distances == 0 and delta_up_distances > 0:
+                    dy[i] = random.choice([-1, 0])
+                elif delta_down_distances > 0 and delta_up_distances == 0:
                     dy[i] = random.choice([0, 1])
                 else:
                     dy[i] = random.choice([-1, 1])
@@ -96,6 +186,8 @@ def construct_input_feature(
             input_features[5, agent_locations[:, 0], agent_locations[:, 1]] = (
                 goal_locations[:, 1] - agent_locations[:, 1]
             ).float()
+    if feature_dim == 7:
+        input_features[6, previous_agent_locations[:, 0], previous_agent_locations[:, 1]] = agent_indices
     return input_features
 
 
