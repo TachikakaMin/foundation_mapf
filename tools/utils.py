@@ -46,29 +46,33 @@ def construct_input_feature(
             distances[i] = get_distance(distance_map, agent_locations[i], goal_locations[i])
         input_features[3, agent_locations[:, 0], agent_locations[:, 1]] = distances
     if feature_dim == 5:
+        # 批量计算距离
+        distances = torch.zeros(agent_num, dtype=torch.float32, device=device)
+        for i in range(agent_num):
+            distances[i] = get_distance(distance_map, agent_locations[i], goal_locations[i])
         if feature_type == "gradient":
             dx = torch.zeros(agent_num, dtype=torch.float32, device=device)
             dy = torch.zeros(agent_num, dtype=torch.float32, device=device)
             for i in range(agent_num):
-                left_position = (agent_locations[i, 0] - 1, agent_locations[i, 1])
+                left_position = torch.tensor([agent_locations[i, 0] - 1, agent_locations[i, 1]], device=device)
                 left_distances = get_distance(distance_map, left_position, goal_locations[i])
                 if any((left_position == agent).all() for agent in agent_locations):
                     left_distances = NOT_FOUND_PATH
                 delta_left_distances = left_distances - distances[i]
                 
-                right_position = (agent_locations[i, 0] + 1, agent_locations[i, 1])
+                right_position = torch.tensor([agent_locations[i, 0] + 1, agent_locations[i, 1]], device=device)
                 right_distances = get_distance(distance_map, right_position, goal_locations[i])
                 if any((right_position == agent).all() for agent in agent_locations):
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
-                up_position = (agent_locations[i, 0], agent_locations[i, 1] + 1)
+                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
                 if any((up_position == agent).all() for agent in agent_locations):
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
-                down_position = (agent_locations[i, 0], agent_locations[i, 1] - 1)
+                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
                 if any((down_position == agent).all() for agent in agent_locations):
                     down_distances = NOT_FOUND_PATH
@@ -119,25 +123,25 @@ def construct_input_feature(
             dx = torch.zeros(agent_num, dtype=torch.float32, device=device)
             dy = torch.zeros(agent_num, dtype=torch.float32, device=device)
             for i in range(agent_num):
-                left_position = (agent_locations[i, 0] - 1, agent_locations[i, 1])
+                left_position = torch.tensor([agent_locations[i, 0] - 1, agent_locations[i, 1]], device=device)
                 left_distances = get_distance(distance_map, left_position, goal_locations[i])
                 if any((left_position == agent).all() for agent in agent_locations):
                     left_distances = NOT_FOUND_PATH
                 delta_left_distances = left_distances - distances[i]
                 
-                right_position = (agent_locations[i, 0] + 1, agent_locations[i, 1])
+                right_position = torch.tensor([agent_locations[i, 0] + 1, agent_locations[i, 1]], device=device)
                 right_distances = get_distance(distance_map, right_position, goal_locations[i])
                 if any((right_position == agent).all() for agent in agent_locations):
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
-                up_position = (agent_locations[i, 0], agent_locations[i, 1] + 1)
+                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
                 if any((up_position == agent).all() for agent in agent_locations):
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
-                down_position = (agent_locations[i, 0], agent_locations[i, 1] - 1)
+                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
                 if any((down_position == agent).all() for agent in agent_locations):
                     down_distances = NOT_FOUND_PATH

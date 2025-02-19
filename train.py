@@ -103,17 +103,18 @@ def train(args, model, train_loaders, val_loaders, sample_loader, optimizer, los
         if args.local_rank == 0:
             args.writer.add_scalar("Loss/Train", train_loss, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss}")
-        if epoch % args.eval_interval == 0 and args.local_rank == 0:
+        if epoch % args.eval_interval == 0:
             for val_loader in val_loaders.values():
                 val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
-                args.writer.add_scalar("Loss/Val", val_loss, epoch)
-                print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
-            # sample path visualization
-            for idx in range(len(sample_loader)):   
-                _, _, current_goal_distance, _ = path_formation(model, sample_loader, idx, device, args.feature_type, steps=args.steps)
-                args.writer.add_scalar(
-                    f"Loss/video_goal_dis_{idx}", current_goal_distance, epoch
-                )
+                if args.local_rank == 0:
+                    args.writer.add_scalar("Loss/Val", val_loss, epoch)
+                    print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
+                    # sample path visualization
+                    for idx in range(len(sample_loader)):   
+                        _, _, current_goal_distance, _ = path_formation(model, sample_loader, idx, device, args.feature_type, steps=args.steps)
+                        args.writer.add_scalar(
+                            f"Loss/video_goal_dis_{idx}", current_goal_distance, epoch
+                        )
         if epoch % args.save_interval == 0 and args.local_rank == 0:
             file_path = os.path.join(
                 args.real_log_dir, f"model_checkpoint_epoch_{epoch}.pth"
