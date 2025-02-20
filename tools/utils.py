@@ -56,25 +56,26 @@ def construct_input_feature(
             for i in range(agent_num):
                 left_position = torch.tensor([agent_locations[i, 0] - 1, agent_locations[i, 1]], device=device)
                 left_distances = get_distance(distance_map, left_position, goal_locations[i])
-                if any((left_position == agent).all() for agent in agent_locations):
+                # Vectorized comparison
+                if ((agent_locations == left_position).all(dim=1)).any():
                     left_distances = NOT_FOUND_PATH
                 delta_left_distances = left_distances - distances[i]
                 
                 right_position = torch.tensor([agent_locations[i, 0] + 1, agent_locations[i, 1]], device=device)
                 right_distances = get_distance(distance_map, right_position, goal_locations[i])
-                if any((right_position == agent).all() for agent in agent_locations):
+                if ((agent_locations == right_position).all(dim=1)).any():
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
                 up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
-                if any((up_position == agent).all() for agent in agent_locations):
+                if ((agent_locations == up_position).all(dim=1)).any():
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
                 down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
-                if any((down_position == agent).all() for agent in agent_locations):
+                if ((agent_locations == down_position).all(dim=1)).any():
                     down_distances = NOT_FOUND_PATH
                 delta_down_distances = down_distances - distances[i]
                 
@@ -125,25 +126,26 @@ def construct_input_feature(
             for i in range(agent_num):
                 left_position = torch.tensor([agent_locations[i, 0] - 1, agent_locations[i, 1]], device=device)
                 left_distances = get_distance(distance_map, left_position, goal_locations[i])
-                if any((left_position == agent).all() for agent in agent_locations):
+                # Vectorized comparison
+                if ((agent_locations == left_position).all(dim=1)).any():
                     left_distances = NOT_FOUND_PATH
                 delta_left_distances = left_distances - distances[i]
                 
                 right_position = torch.tensor([agent_locations[i, 0] + 1, agent_locations[i, 1]], device=device)
                 right_distances = get_distance(distance_map, right_position, goal_locations[i])
-                if any((right_position == agent).all() for agent in agent_locations):
+                if ((agent_locations == right_position).all(dim=1)).any():
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
                 up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
-                if any((up_position == agent).all() for agent in agent_locations):
+                if ((agent_locations == up_position).all(dim=1)).any():
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
                 down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
-                if any((down_position == agent).all() for agent in agent_locations):
+                if ((agent_locations == down_position).all(dim=1)).any():
                     down_distances = NOT_FOUND_PATH
                 delta_down_distances = down_distances - distances[i]
                 
