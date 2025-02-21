@@ -138,7 +138,6 @@ if __name__ == "__main__":
     else:
         args.local_rank = 0    
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
     args.real_log_dir = os.path.join(args.log_dir, f"{args.current_time}")
     
@@ -221,8 +220,8 @@ if __name__ == "__main__":
         test_indices = indices[:n_test]
         train_indices = indices[n_test:]
         
-        test_list = [files[i] for i in test_indices]
-        train_list = [files[i] for i in train_indices]
+        test_list = [files[i] for i in test_indices][:5000]
+        train_list = [files[i] for i in train_indices][:50000]
         
         if args.local_rank == 0:
             print(f"Map size {dims} - train_list size: {len(train_list)}, test_list size: {len(test_list)}")

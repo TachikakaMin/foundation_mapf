@@ -192,3 +192,6 @@ model_checkpoint*
 data_benchmark/
 data_mapf_gpt/
 MAPF_GPT_eval_configs/
+
+
+ITA-CBS_dev-main/

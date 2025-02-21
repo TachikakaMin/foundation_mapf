@@ -60,7 +60,7 @@ done | parallel --progress --bar --eta --timeout 10 --colsep ' ' \
 python -m tools.convert_lacam_path_to_bin data/path_files
 
 # train
-# CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nproc_per_node=4 train.py --distributed -bs 8
+# CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nproc_per_node=2 train.py --distributed -bs 8
 python train.py -bs 2048 --bilinear -flc 16 -nw 8
 
 # eval
