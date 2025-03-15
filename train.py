@@ -220,8 +220,8 @@ if __name__ == "__main__":
         test_indices = indices[:n_test]
         train_indices = indices[n_test:]
         
-        test_list = [files[i] for i in test_indices][:5000]
-        train_list = [files[i] for i in train_indices][:50000]
+        test_list = [files[i] for i in test_indices][:10]
+        train_list = [files[i] for i in train_indices][:10]
         
         if args.local_rank == 0:
             print(f"Map size {dims} - train_list size: {len(train_list)}, test_list size: {len(test_list)}")

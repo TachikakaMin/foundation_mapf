@@ -21,10 +21,7 @@ def get_args():
         "-sp",
         type=str,
         nargs="+",
-        default=["data/input_data/maze-32-32-60-2-75/maze-32-32-60-2-75-0-96/maze-32-32-60-2-75-0-96-0.bin",
-                 "data/input_data/maze-32-32-60-1-80/maze-32-32-60-1-80-1-128/maze-32-32-60-1-80-1-128-0.bin",
-                 "data/input_data/maze-32-32-60-2-80/maze-32-32-60-2-80-0-96/maze-32-32-60-2-80-0-96-0.bin",
-                 "data/input_data/maze-32-32-60-2-80/maze-32-32-60-2-80-0-128/maze-32-32-60-2-80-0-128-0.bin",
+        default=["data/input_data/maze-32-32-60-1-75/maze-32-32-60-1-75-0-16/maze-32-32-60-1-75-0-16-1.bin"
                  ],
         help="sample data path",
     )
