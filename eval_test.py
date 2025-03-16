@@ -1,74 +1,105 @@
-import os
 import torch
 from models.unet import UNet
-from data_preprocess.datasetMAPF import MAPFDataset
+from MAPF_dataset import MAPFDataset
 from torch.utils.data import DataLoader
-from evaluation import evaluate_valid_loss
-from path_visualization import path_formation, animate_paths
-from args import get_args
+from tools.path_formation import path_formation
+from tools.visualize_path import visualize_path
 import numpy as np
 import random
-from datetime import datetime
-
+import argparse
+import glob
+import os
+from tqdm import tqdm
 def main():
-    # Get the same arguments as used in training
-    args = get_args()
-    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    # Set up device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Initialize model
-    feature_channels = 5
-    net = UNet(n_channels=feature_channels, n_classes=args.action_dim, bilinear=False)
-    
-    # Load checkpoint
-    checkpoint_path = "checkpoint.pth"
-    net.load_state_dict(torch.load(checkpoint_path))
-    net.to(device)
-    net.eval()
-    
-    # Set up validation data
-    args.map_strings = ["empty"]  # or whichever maps you want to evaluate on
-    args.agent_idx_dim = int(np.ceil(np.log2(args.max_agent_num)))
-    
-    val_loaders = []
-    for map_string in args.map_strings:
-        if os.path.isdir(args.dataset_path):
-            h5_files = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path) 
-                       if f.endswith(".h5") and map_string in f]
-        else:
-            h5_files = [args.dataset_path]
-            
-        # Use a smaller subset for testing if needed
-        test_files = h5_files
-        
-        test_data = MAPFDataset(test_files, args.agent_idx_dim)
-        val_loader = DataLoader(test_data, 
-                              shuffle=False,  
-                              batch_size=args.batch_size, 
-                              num_workers=16)
-        val_loaders.append(val_loader)
-    
-    # Set up loss function
-    loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
-    
-    # Evaluate
-    with torch.no_grad():
-        # Calculate validation loss
-        val_loss = evaluate_valid_loss(net, val_loaders, loss_fn, device)
-        print(f"Validation Loss: {val_loss}")
-        
-        # Generate and animate paths for each validation loader
-        for i, val_loader in enumerate(val_loaders):
-            print(f"Generating path visualization for map type {args.map_strings[i]}")
-            print(f"length of val_loader: {len(val_loader.dataset)}")
-            current_goal_distance, _map, trajectories, goal_positions = path_formation(
-                args, net, val_loader, 0, 0, device, action_choice="sample"
-            )
-            print(f"Goal distance: {current_goal_distance}")
-            
-            # Save animation
-            animate_paths(args, 10, trajectories, goal_positions, _map, interval=500)
+    # 获取参数
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--model_path", type=str, required=True, help="Path to the model file"
+    )
+    parser.add_argument(
+        "--dataset_paths",
+        type=str,
+        nargs="+",
+        required=True,
+        help="Paths to the dataset files",
+    )
+    parser.add_argument("--feature_dim", type=int, default=6, help="Feature dimension")
+    parser.add_argument("--feature_type", type=str, default="gradient", help="Feature type")
+    parser.add_argument("--steps", type=int, default=300, help="Steps")
+    parser.add_argument("--action_dim", type=int, default=5, help="Action dimension")
+    parser.add_argument(
+        "--bilinear", action="store_true", default=False, help="Use bilinear upsampling"
+    )
+    parser.add_argument(
+        "--first_layer_channels",
+        "-flc",
+        type=int,
+        default=64,
+        help="First layer channels",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="evals",
+        help="Path to the output directory",
+    )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        default=False,
+        help="Show the path",
+    )
+    parser.add_argument(
+        "--lifelong",
+        action="store_true",
+        default=False,
+        help="Lifelong learning",
+    )
+    args = parser.parse_args()
+
+    # 设置随机种子以确保可重复性
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
+    # 设置设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 初始化模型
+    model = UNet(
+        n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear
+    ).to(device)
+
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    model_memory = total_params * 4 / (1024**2)
+    print(f"参数总数 (parameter):{total_params}")
+    print(f"模型大小约为 (model size):{model_memory:.2f} MB")    
+
+    # 加载模型权重
+    model.load_state_dict(torch.load(args.model_path, map_location=device))
+    model.eval()
+    if not args.dataset_paths[0].endswith(".bin"):
+        input_files = glob.glob(os.path.join(args.dataset_paths[0], "**/*-0.bin"), recursive=True)
+    else:
+        input_files = args.dataset_paths
+    # 准备验证数据集
+    test_dataset = MAPFDataset(input_files, args.feature_dim, args.feature_type, first_step=True)
+    val_loader = DataLoader(
+        test_dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=1,
+    )
+    print("len(val_loader):", len(val_loader))
+    os.makedirs(args.output_dir, exist_ok=True)
+    log_file_path = os.path.join(args.output_dir, args.dataset_paths[0].split("/")[2] + "_log.txt")
+    for i in tqdm(range(len(val_loader)), desc="Evaluating"):
+        all_paths, all_goal_locations, _, file_name = path_formation(
+            model, val_loader, i, device, args.feature_type, steps=args.steps, log_file=log_file_path, lifelong=args.lifelong
+        )
+    visualize_path(all_paths, all_goal_locations, file_name, video_path=args.output_dir, show=args.show)
+
 
 if __name__ == "__main__":
     main()

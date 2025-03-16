@@ -8,6 +8,10 @@ runs/
 single_map_data_empty/
 .vscode/
 data
+data_empty_16
+data_empty_32
+data_random_16_10
+data_random_32_20
 data_h5/
 data_agent*
 test_data/
@@ -182,3 +186,12 @@ Makefile
 cmake_install.cmake
 CMakeFiles/
 CMakeCache.txt
+
+evals
+model_checkpoint*
+data_benchmark/
+data_mapf_gpt/
+MAPF_GPT_eval_configs/
+
+
+ITA-CBS_dev-main/
