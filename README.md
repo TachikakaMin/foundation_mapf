@@ -1,5 +1,23 @@
 # RAILGUN: A Unified Convolutional Policy for Multi-Agent Path Finding Across Different Environments and Tasks
 
+[Yimin Tang*](https://sites.google.com/view/yimintang), [Xiao Xiong*](https://openreview.net/profile?id=~Xiao_Xiong2), [Jingyi Xi](https://openreview.net/profile?id=~Jingyi_Xi1), [Jiaoyang Li](https://jiaoyangli.me/), [Erdem Bıyık](https://ebiyik.github.io/), [Sven Koenig](https://idm-lab.org/)
+
+### TL;DR: We present the first centralized learning-based method for MAPF, called RAILGUN, which generates actions based on maps rather than individual agents.
+
+Our insight is that in a valid MAPF solution, there will be no collision, which means there can be at most one agent in each map grid cell in each timestep. At any timestep, each agent chooses one of the five edges of its grid cell as its action. Therefore, if we remove all edges that the agents do not use at each timestep, we find that a valid MAPF solution can be viewed as a series of specialized graphs.
+
+
+
+<p align="center">
+<img width="1021" height="447" alt="image" src="https://github.com/user-attachments/assets/572f1f5e-9bc4-49af-9cf7-a761a4b11c87" />
+</p>
+
+<p align="center">
+  <img width="504" height="501" alt="image" src="https://github.com/user-attachments/assets/d55687b9-3cdb-4517-ab2d-9aa6712a9fc5" />
+</p>
+
+## Abstract
+
 Multi-Agent Path Finding (MAPF), which focuses on finding collision-free paths for multiple robots, is crucial for applications ranging from aerial swarms to warehouse automation. Solving MAPF is NP-hard so learning-based approaches for MAPF have gained attention, particularly those leveraging deep neural networks. Nonetheless, despite the community's continued efforts, all learning-based MAPF planners still rely on decentralized planning due to variability in the number of agents and map sizes. We have developed the first centralized learning-based policy for MAPF problem called RAILGUN. RAILGUN is not an agent-based policy but a map-based policy. By leveraging a CNN-based architecture, RAILGUN can generalize across different maps and handle any number of agents. We collect trajectories from rule-based methods to train our model in a supervised way. In experiments, RAILGUN outperforms most baseline methods and demonstrates great zero-shot generalization capabilities on various tasks, maps and agent numbers that were not seen in the training dataset.
 
 
