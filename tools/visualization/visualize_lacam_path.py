@@ -1,5 +1,5 @@
 from .visualize_path import visualize_path
-from .utils import parse_coordinates
+from ..utils import parse_coordinates
 
 
 def parse_lacam_file(file_name):

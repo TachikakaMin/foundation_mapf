@@ -4,7 +4,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 import glob
 from tqdm import tqdm
-from .utils import parse_coordinates
+from ...utils import parse_coordinates
 
 def get_action(cur_pos, next_pos):
     # 计算差值
