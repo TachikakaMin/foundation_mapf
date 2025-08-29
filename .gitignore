@@ -1,4 +1,5 @@
 sample_data/
+data_generation_LACAM/lacam3/
 eval_traj/
 *.gz
 data_empty/
