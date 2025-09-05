@@ -12,6 +12,12 @@ NOT_FOUND_PATH = 2048
 def get_distance(distance_map, agent_location, goal_location):
     agent_location = (int(agent_location[0]), int(agent_location[1]))
     goal_location = (int(goal_location[0]), int(goal_location[1]))
+    
+    # 检查是否是C++生成的距离地图读取器
+    if hasattr(distance_map, 'get_distance'):
+        return distance_map.get_distance(agent_location, goal_location)
+    
+    # 原有的Python字典格式
     if agent_location not in distance_map:
         return NOT_FOUND_PATH
     return distance_map[agent_location][goal_location[0]][goal_location[1]]
@@ -244,8 +250,26 @@ def read_map(map_file_path):
 
 
 def read_distance_map(map_file_path):
-    file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".pkl")
-    return pickle.load(open(file_path, "rb"))
+    """
+    读取距离地图，优先使用C++生成的二进制格式，回退到Python的pickle格式
+    """
+    # 首先尝试C++生成的二进制格式
+    cpp_file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".dmap")
+    if os.path.exists(cpp_file_path):
+        try:
+            from .distance_map_reader import DistanceMapReader
+            reader = DistanceMapReader(cpp_file_path)
+            return reader
+        except ImportError:
+            pass  # 如果无法导入，回退到pickle格式
+    
+    # 回退到Python的pickle格式
+    pkl_file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".pkl")
+    if os.path.exists(pkl_file_path):
+        return pickle.load(open(pkl_file_path, "rb"))
+    
+    # 如果两种格式都不存在，抛出错误
+    raise FileNotFoundError(f"距离地图文件不存在: {cpp_file_path} 或 {pkl_file_path}")
 
 def calculate_single_point_distances(args):
     start, map_data, n, m = args

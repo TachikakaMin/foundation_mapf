@@ -253,3 +253,4 @@ def calculate_step_density(current_locations, map_data):
             agent_densities.append(local_density)
     
     return agent_densities
+
