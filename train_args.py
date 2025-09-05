@@ -26,7 +26,7 @@ def get_args():
         help="sample data path",
     )
     parser.add_argument(
-        "--num_workers", "-nw", type=int, default=2, help="number of workers"
+        "--num_workers", "-nw", type=int, default=16, help="number of workers"
     )
     # training
     parser.add_argument(

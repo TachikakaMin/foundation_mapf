@@ -1,6 +1,7 @@
 from tqdm import tqdm
 import torch
 import numpy as np
+import os
 from torch.utils.data import Dataset
 from tools.utils import read_map, read_distance_map, parse_file_name, construct_input_feature
 from concurrent.futures import ThreadPoolExecutor
@@ -80,6 +81,12 @@ class MAPFDataset(Dataset):
         map_name, _ = parse_file_name(file_name)
         # 按需加载map和distance_map
         map_data = read_map(map_name)
+        
+        # 使用缓存版本的距离地图读取
+        try:
+            from tools.cached_distance_reader import read_distance_map_cached
+            distance_map = read_distance_map_cached(map_name)
+        except ImportError:
         distance_map = read_distance_map(map_name)
         
         # Convert to tensors
@@ -87,6 +94,34 @@ class MAPFDataset(Dataset):
         goal_locations = torch.tensor(goal_locations, dtype=torch.long)
         actions = torch.tensor(actions, dtype=torch.long)
 
+        # 尝试使用C++加速版本
+        try:
+            import sys
+            tools_dir = os.path.join(os.path.dirname(__file__), 'tools')
+            if tools_dir not in sys.path:
+                sys.path.insert(0, tools_dir)
+            import construct_features_native as cpp_features
+            
+            # 转换为numpy数组以便C++处理
+            map_data_np = map_data.astype(np.float32) if isinstance(map_data, np.ndarray) else np.array(map_data, dtype=np.float32)
+            agent_locations_np = agent_locations.cpu().numpy().astype(np.int64)
+            goal_locations_np = goal_locations.cpu().numpy().astype(np.int64)
+            
+            # 调用C++函数
+            input_features_np = cpp_features.construct_input_feature(
+                map_data_np,
+                agent_locations_np, 
+                goal_locations_np,
+                distance_map,
+                self.feature_dim,
+                self.feature_type
+            )
+            
+            # 转换回torch tensor
+            input_features = torch.from_numpy(input_features_np).to(agent_locations.device)
+            
+        except Exception as e:
+            # 静默回退到Python版本
         input_features = construct_input_feature(
             map_data,
             agent_locations,

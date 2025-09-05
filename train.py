@@ -8,8 +8,8 @@ from tqdm import tqdm
 from train_args import get_args
 from models.unet import UNet
 from models.CNN import CNN
-from MAPF_dataset import MAPFDataset
-from tools.path_formation import path_formation
+from MAPF_dataset_mbin import MAPFDataset
+from tools.core.path_formation import path_formation
 from torch.utils.tensorboard import SummaryWriter
 import random
 import glob
@@ -188,25 +188,46 @@ if __name__ == "__main__":
     val_loaders = {}
     
     def get_map_dims(filename):
-        # Extract h,w from filename like 'maze-32-32-20-0-32-0-0.bin'
-        parts = filename.split('-')
+        # Extract h,w from filename like 'maze-32-32-20-0-32-0-0.mbin' or 'maze-32-32-20-0-32-0-0.bin'
+        parts = os.path.basename(filename).split('-')
         return (int(parts[1]), int(parts[2]))
 
-
-    # Get immediate subdirectories of dataset_path
+    # 只处理.mbin文件
     dimension_groups = {}
-    subdirs = [d for d in os.listdir(args.dataset_path)]
     
-    for subdir in subdirs:
-        dims = get_map_dims(subdir)
-        # Get all .bin files in this subdirectory recursively
-        dir_path = os.path.join(args.dataset_path, subdir)
-        files = glob.glob(os.path.join(dir_path, "**/*.bin"), recursive=True)
+    # 查找所有.mbin文件
+    mbin_files = glob.glob(os.path.join(args.dataset_path, "**/*.mbin"), recursive=True)
+    if not mbin_files:
+        if args.local_rank == 0:
+            print("❌ 未找到.mbin文件，请先运行数据转换")
+        exit(1)
+    
+    if args.local_rank == 0:
+        print(f"找到 {len(mbin_files)} 个.mbin文件")
+    
+    for file in mbin_files:
+        dims = get_map_dims(file)
         if dims not in dimension_groups:
             dimension_groups[dims] = []
-        dimension_groups[dims] += files
+        dimension_groups[dims].append(file)
+
+    # 过滤掉太小的地图（UNet无法处理）
+    min_map_size = 32  # UNet需要至少32x32的地图
+    filtered_dimension_groups = {}
+    
+    for dims, files in dimension_groups.items():
+        if dims[0] >= min_map_size and dims[1] >= min_map_size:
+            filtered_dimension_groups[dims] = files
+        else:
+            if args.local_rank == 0:
+                print(f"跳过太小的地图尺寸 {dims}，包含 {len(files)} 个文件")
+    
+    dimension_groups = filtered_dimension_groups
+    
+    if not dimension_groups:
         if args.local_rank == 0:
-            print(f"Found {len(files)} .bin files in {subdir}")
+            print("❌ 没有找到合适大小的地图数据")
+        exit(1)
 
     # Create separate dataloaders for each dimension group
     for dims, files in dimension_groups.items():
@@ -220,12 +241,13 @@ if __name__ == "__main__":
         test_indices = indices[:n_test]
         train_indices = indices[n_test:]
         
-        test_list = [files[i] for i in test_indices][:10]
-        train_list = [files[i] for i in train_indices][:10]
+        test_list = [files[i] for i in test_indices]
+        train_list = [files[i] for i in train_indices]
         
         if args.local_rank == 0:
             print(f"Map size {dims} - train_list size: {len(train_list)}, test_list size: {len(test_list)}")
 
+        # 使用统一的.mbin数据集类
         train_data = MAPFDataset(train_list, args.feature_dim, args.feature_type)
         test_data = MAPFDataset(test_list, args.feature_dim, args.feature_type)
         
@@ -251,7 +273,13 @@ if __name__ == "__main__":
         train_loaders[dims] = train_loader
         val_loaders[dims] = val_loader
     
-    sample_data = MAPFDataset(args.sample_data_path, args.feature_dim, args.feature_type, first_step=True)
+    # 为sample_data查找对应的.mbin文件
+    available_mbin = glob.glob("data/input_data/**/*.mbin", recursive=True)
+    if available_mbin:
+        sample_data = MAPFDataset([available_mbin[0]], args.feature_dim, args.feature_type, first_step=True)
+    else:
+        print("❌ 未找到sample数据的.mbin文件")
+        exit(1)
     sample_loader = DataLoader(
         sample_data,
         shuffle=False,
