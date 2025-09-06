@@ -21,12 +21,12 @@ def get_args():
         "-sp",
         type=str,
         nargs="+",
-        default=["data/input_data/maze-32-32-60-1-75/maze-32-32-60-1-75-0-16/maze-32-32-60-1-75-0-16-1.bin"
+        default=["data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin"
                  ],
         help="sample data path",
     )
     parser.add_argument(
-        "--num_workers", "-nw", type=int, default=2, help="number of workers"
+        "--num_workers", "-nw", type=int, default=20, help="number of workers"
     )
     # training
     parser.add_argument(

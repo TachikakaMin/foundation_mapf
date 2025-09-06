@@ -12,7 +12,7 @@ def select_random_neighbor(x, y, maze_shape, rng, last_direction, go_straight):
     neighbor_coords = []  # 存储当前格点的有效邻居点坐标。
     probabilities = []  # 存储每个邻居被选中的概率。
 
-    # 如果当前坐标x大于1，则可以向左扩展
+    # 如果当前坐标x大于1, 则可以向左扩展
     if x > 1:
         neighbor_coords.append((y, x - 2))
         probabilities.append(
@@ -20,7 +20,7 @@ def select_random_neighbor(x, y, maze_shape, rng, last_direction, go_straight):
             if (y, x - 2) == (y + last_direction[0], x + last_direction[1])
             else (1 - go_straight)
         )
-    # 如果当前坐标x小于迷宫的宽度减2，则可以向右扩展
+    # 如果当前坐标x小于迷宫的宽度减2, 则可以向右扩展
     if x < maze_shape[1] - 2:
         neighbor_coords.append((y, x + 2))
         probabilities.append(
@@ -28,7 +28,7 @@ def select_random_neighbor(x, y, maze_shape, rng, last_direction, go_straight):
             if (y, x + 2) == (y + last_direction[0], x + last_direction[1])
             else (1 - go_straight)
         )
-    # 如果当前坐标y大于1，则可以向上扩展
+    # 如果当前坐标y大于1, 则可以向上扩展
     if y > 1:
         neighbor_coords.append((y - 2, x))
         probabilities.append(
@@ -36,7 +36,7 @@ def select_random_neighbor(x, y, maze_shape, rng, last_direction, go_straight):
             if (y - 2, x) == (y + last_direction[0], x + last_direction[1])
             else (1 - go_straight)
         )
-    # 如果当前坐标y小于迷宫的高度减2，则可以向下扩展
+    # 如果当前坐标y小于迷宫的高度减2, 则可以向下扩展
     if y < maze_shape[0] - 2:
         neighbor_coords.append((y + 2, x))
         probabilities.append(
@@ -80,8 +80,8 @@ def generate_maze(
     maze_shape = (
         height + 1,
         width + 1,
-    )  # 确保迷宫的矩阵尺寸为奇数，并在外围留出一圈墙；墙之后会被删除
-    # 根据迷宫的面积、障碍物密度和墙体单元数，计算墙体的数量。
+    )  # 确保迷宫的矩阵尺寸为奇数, 并在外围留出一圈墙；墙之后会被删除
+    # 根据迷宫的面积、障碍物密度和墙体单元数, 计算墙体的数量。
     density = int(maze_shape[0] * maze_shape[1] * obstacle_density // wall_components)
 
     maze_grid = np.zeros(maze_shape, dtype="int")
@@ -94,13 +94,13 @@ def generate_maze(
 
     # 随机选择墙体的起始点
     for i in range(density):
-        # 确保起点的坐标为偶数，这样墙和路径交替分布。
+        # 确保起点的坐标为偶数, 这样墙和路径交替分布。
         x = rng.integers(0, maze_shape[1] // 2) * 2
         y = rng.integers(0, maze_shape[0] // 2) * 2
         maze_grid[y, x] = 1
 
         # 随机扩展墙体
-        last_direction = (0, 0)  # 初始方向为无，因为是起始点
+        last_direction = (0, 0)  # 初始方向为无, 因为是起始点
         for j in range(wall_components):
             next_x, next_y, last_direction = select_random_neighbor(
                 x, y, maze_shape, rng, last_direction, go_straight
@@ -110,11 +110,11 @@ def generate_maze(
             ):  # 检查选择的邻居是否为空地
                 maze_grid[next_y, next_x] = 1
                 maze_grid[next_y + (y - next_y) // 2, next_x + (x - next_x) // 2] = (
-                    1  # 连接当前点和邻居点之间的路径（中间点），将其也设为 1
+                    1  # 连接当前点和邻居点之间的路径（中间点）, 将其也设为 1
                 )
                 x, y = next_x, next_y
 
-    maze_grid = maze_grid[:-1, :-1]  # 删除一半外围的墙，因为想要shape是偶数
+    maze_grid = maze_grid[:-1, :-1]  # 删除一半外围的墙, 因为想要shape是偶数
 
     maze_str = []
     for line in maze_grid:

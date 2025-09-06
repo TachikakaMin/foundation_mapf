@@ -10,7 +10,7 @@ def run_single_ecbs(yaml_file, input_dir, output_dir, weight, timeout):
     
     print(f"Running command: {command}")
     
-    # 使用新的进程组，以便在超时时终止整个进程组
+    # 使用新的进程组, 以便在超时时终止整个进程组
     process = subprocess.Popen(command, shell=True, preexec_fn=os.setsid)
     try:
         # 等待进程完成或超时
@@ -20,7 +20,7 @@ def run_single_ecbs(yaml_file, input_dir, output_dir, weight, timeout):
         # 超时后终止整个进程组
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
         
-        # 检查输出文件是否存在且不完整，若是，则删除
+        # 检查输出文件是否存在且不完整, 若是, 则删除
         if os.path.exists(output_file_path):
             print(f"Deleting incomplete output file: {output_file_path}")
             os.remove(output_file_path)
@@ -33,7 +33,7 @@ def run_ecbs(input_dir, output_dir, weight=1.2, timeout=5, max_workers=32):
     # 获取所有 .yaml 文件
     yaml_files = [f for f in os.listdir(input_dir) if f.endswith('.yaml')]
     
-    # 如果输出目录不存在，则创建
+    # 如果输出目录不存在, 则创建
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     

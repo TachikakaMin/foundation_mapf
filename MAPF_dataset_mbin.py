@@ -2,8 +2,9 @@ from tqdm import tqdm
 import torch
 import numpy as np
 from torch.utils.data import Dataset
-from tools.utils import read_map, construct_input_feature
+from tools.utils import read_map
 from tools.cached_distance_reader import read_distance_map_cached
+from tools.extensions import construct_input_feature_cpp as cpp_features
 from concurrent.futures import ThreadPoolExecutor
 import struct
 import os
@@ -60,25 +61,20 @@ class MAPFDataset(Dataset):
 
     def load_single_merged_file_info(self, file_name):
         """加载单个合并文件的元数据"""
-        try:
-            with open(file_name, "rb") as f:
-                # 读取文件头部
-                header_data = f.read(16)  # MergedFileHeader size
-                num_scenarios = struct.unpack('I', header_data[:4])[0]
-                
-                scenarios_info = []
-                
-                # 读取索引表
-                for scenario_idx in range(num_scenarios):
-                    index_data = f.read(272)  # ScenarioIndex size: 8+4+2+2+256
-                    steps = struct.unpack('H', index_data[12:14])[0]
-                    scenarios_info.append((scenario_idx, steps))
-                
-                return file_name, scenarios_info
-                
-        except Exception as e:
-            print(f"Error reading merged file {file_name}: {e}")
-            return None
+        with open(file_name, "rb") as f:
+            # 读取文件头部
+            header_data = f.read(16)  # MergedFileHeader size
+            num_scenarios = struct.unpack('I', header_data[:4])[0]
+            
+            scenarios_info = []
+            
+            # 读取索引表
+            for scenario_idx in range(num_scenarios):
+                index_data = f.read(272)  # ScenarioIndex size: 8+4+2+2+256
+                steps = struct.unpack('H', index_data[12:14])[0]
+                scenarios_info.append((scenario_idx, steps))
+            
+            return file_name, scenarios_info
 
     def parse_map_name_from_mbin(self, file_name):
         """从.mbin文件名解析地图名称"""
@@ -95,7 +91,7 @@ class MAPFDataset(Dataset):
             
             # 验证地图文件是否存在
             if not os.path.exists(map_name):
-                # 如果直接路径不存在，尝试查找该目录下的任意地图文件
+                # 如果直接路径不存在, 尝试查找该目录下的任意地图文件
                 map_files = glob.glob(f"data/map_files/{map_pattern}/*.map")
                 if map_files:
                     map_name = map_files[0]  # 使用第一个可用的地图文件
@@ -169,15 +165,25 @@ class MAPFDataset(Dataset):
         goal_locations = torch.tensor(goal_locations, dtype=torch.long)
         actions = torch.tensor(actions, dtype=torch.long)
 
-        # 构建输入特征（使用Python版本，经过测试更快）
-        input_features = construct_input_feature(
-            map_data,
-            agent_locations,
-            goal_locations,
+        
+        # 转换为numpy数组以便C++处理
+        map_data_np = map_data.astype(np.float32) if isinstance(map_data, np.ndarray) else np.array(map_data, dtype=np.float32)
+        agent_locations_np = agent_locations.cpu().numpy().astype(np.int64)
+        goal_locations_np = goal_locations.cpu().numpy().astype(np.int64)
+        
+        # 调用C++函数
+        input_features_np = cpp_features(
+            map_data_np,
+            agent_locations_np, 
+            goal_locations_np,
             distance_map,
             self.feature_dim,
             self.feature_type
         )
+        
+        # 转换回torch tensor
+        input_features = torch.from_numpy(input_features_np).to(agent_locations.device)
+
 
         output_features = torch.zeros(map_data.shape, dtype=torch.long)
         output_features[agent_locations[:, 0], agent_locations[:, 1]] = actions

@@ -48,13 +48,9 @@ class MAPFDataset(Dataset):
 
     def load_single_file_info(self, file_name):
         """Helper function to load a single file's metadata"""
-        try:
-            with open(file_name, "rb") as f:
-                steps = np.int64(np.frombuffer(f.read(2), dtype=np.int16)[0])
-                return file_name, steps
-        except Exception as e:
-            print(f"Error reading file {file_name}: {e}")
-            return None
+        with open(file_name, "rb") as f:
+            steps = np.int64(np.frombuffer(f.read(2), dtype=np.int16)[0])
+            return file_name, steps
 
     def __getitem__(self, idx):
         file_name = self.file_indices[idx].decode('utf-8')

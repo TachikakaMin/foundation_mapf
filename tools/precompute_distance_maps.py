@@ -8,27 +8,23 @@ import sys
 
 def process_single_map(map_file):
     """Process a single map file to create its distance map."""
-    try:
-        # Simply replace map_files with distance_maps and .map with .pkl
-        distance_map_path = map_file.replace("map_files", "distance_maps").replace(".map", ".pkl")
-        
-        # Skip if already exists
-        if os.path.exists(distance_map_path):
-            return None
-            
-        # Create distance map
-        map_data = read_map(map_file)
-        distance_map = create_distance_map(map_data)
-        
-        # Save distance map
-        os.makedirs(os.path.dirname(distance_map_path), exist_ok=True)
-        with open(distance_map_path, "wb") as f:
-            pickle.dump(distance_map, f)
-            
-        return map_file
-    except Exception as e:
-        print(f"Error processing {map_file}: {str(e)}")
+    # Simply replace map_files with distance_maps and .map with .pkl
+    distance_map_path = map_file.replace("map_files", "distance_maps").replace(".map", ".pkl")
+    
+    # Skip if already exists
+    if os.path.exists(distance_map_path):
         return None
+        
+    # Create distance map
+    map_data = read_map(map_file)
+    distance_map = create_distance_map(map_data)
+    
+    # Save distance map
+    os.makedirs(os.path.dirname(distance_map_path), exist_ok=True)
+    with open(distance_map_path, "wb") as f:
+        pickle.dump(distance_map, f)
+        
+    return map_file
 
 def main():
     if len(sys.argv) != 2:

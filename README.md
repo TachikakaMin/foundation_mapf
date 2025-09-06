@@ -31,6 +31,26 @@ cd data_generation_LACAM
 git clone --recursive https://github.com/Kei18/lacam3.git && cd lacam3
 cmake -B build && make -C build
 cd ../../
+
+## C++ Extensions Compilation
+
+This project includes C++ extensions for improved performance. To compile them:
+
+```bash
+# Make sure you are in the correct conda environment
+conda activate py39  # or your preferred Python environment
+
+# Compile C++ extensions
+cd tools
+bash build.sh build
+cd ..
+```
+
+**Important Notes:**
+- The build script automatically detects and uses the currently activated Python environment
+- Make sure to activate the correct conda environment before building
+- The compiled extensions will be compatible with your current Python version
+
 ```
 
 ## Data Generation

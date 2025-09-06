@@ -62,7 +62,7 @@ class DistanceMapReader:
             goal_location: 目标位置 (x, y)
             
         Returns:
-            距离值，如果无法到达则返回NOT_FOUND_PATH
+            距离值, 如果无法到达则返回NOT_FOUND_PATH
         """
         agent_location = (int(agent_location[0]), int(agent_location[1]))
         goal_location = (int(goal_location[0]), int(goal_location[1]))
@@ -102,7 +102,7 @@ class DistanceMapReader:
             position: 位置 (x, y)
             
         Returns:
-            True如果位置有效，False否则
+            True如果位置有效, False否则
         """
         position = (int(position[0]), int(position[1]))
         return position in self.distance_map
@@ -147,7 +147,7 @@ def read_distance_map_cpp(map_file_path: str) -> DistanceMapReader:
 
 def get_distance_cpp(distance_map: DistanceMapReader, agent_location, goal_location) -> int:
     """
-    获取距离的便捷函数，兼容原有的接口
+    获取距离的便捷函数, 兼容原有的接口
     
     Args:
         distance_map: DistanceMapReader对象
@@ -160,7 +160,7 @@ def get_distance_cpp(distance_map: DistanceMapReader, agent_location, goal_locat
     return distance_map.get_distance(agent_location, goal_location)
 
 
-# 为了兼容性，提供与原有Python版本相同的接口
+# 为了兼容性, 提供与原有Python版本相同的接口
 def create_distance_map_dict_from_cpp(dmap_file: str) -> Dict:
     """
     从C++生成的距离地图文件创建Python字典格式的距离地图
@@ -184,20 +184,15 @@ if __name__ == "__main__":
     
     dmap_file = sys.argv[1]
     
-    try:
-        reader = DistanceMapReader(dmap_file)
-        print(f"成功加载距离地图: {dmap_file}")
-        print(f"地图尺寸: {reader.get_map_size()}")
-        print(f"有效位置数量: {len(reader.get_valid_positions())}")
-        
-        # 测试一些距离查询
-        valid_positions = reader.get_valid_positions()
-        if len(valid_positions) >= 2:
-            pos1 = valid_positions[0]
-            pos2 = valid_positions[1]
-            distance = reader.get_distance(pos1, pos2)
-            print(f"从 {pos1} 到 {pos2} 的距离: {distance}")
-        
-    except Exception as e:
-        print(f"错误: {e}")
-        sys.exit(1) 
+    reader = DistanceMapReader(dmap_file)
+    print(f"成功加载距离地图: {dmap_file}")
+    print(f"地图尺寸: {reader.get_map_size()}")
+    print(f"有效位置数量: {len(reader.get_valid_positions())}")
+    
+    # 测试一些距离查询
+    valid_positions = reader.get_valid_positions()
+    if len(valid_positions) >= 2:
+        pos1 = valid_positions[0]
+        pos2 = valid_positions[1]
+        distance = reader.get_distance(pos1, pos2)
+        print(f"从 {pos1} 到 {pos2} 的距离: {distance}")

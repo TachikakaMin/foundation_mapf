@@ -56,7 +56,7 @@ class Down(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2), # 如果输入的特征图尺寸是 H*W ，经过最大池化后，特征图的尺寸将变为  H/2 * W/2 ，而通道数不变
+            nn.MaxPool2d(2), # 如果输入的特征图尺寸是 H*W , 经过最大池化后, 特征图的尺寸将变为  H/2 * W/2 , 而通道数不变
             DoubleConv(in_channels, out_channels)
         )
 
@@ -124,7 +124,7 @@ class Up(nn.Module):
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1) # 1x1 卷积核的作用在于它只对通道进行混合或转换，而不会影响特征图的空间分辨率。
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1) # 1x1 卷积核的作用在于它只对通道进行混合或转换, 而不会影响特征图的空间分辨率。
 
     def forward(self, x):
         return self.conv(x)

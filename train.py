@@ -164,21 +164,21 @@ if __name__ == "__main__":
     if args.model_path:
         net.load_state_dict(torch.load(args.model_path, map_location=device))
     net.to(device)
-    # 如果使用分布式训练，将模型包装为DDP模型
+    # 如果使用分布式训练, 将模型包装为DDP模型
     if args.distributed:
         net = DDP(net, device_ids=[args.local_rank])
 
     # 只在主进程上打印模型信息
-    # if args.local_rank == 0:
-    #     total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
-    #     model_memory = total_params * 4 / (1024**2)
-    #     print(f"参数总数 (parameter):{total_params}")
-    #     print(f"模型大小约为 (model size):{model_memory:.2f} MB")
+    if args.local_rank == 0:
+        total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+        model_memory = total_params * 4 / (1024**2)
+        print(f"参数总数 (parameter):{total_params}")
+        print(f"模型大小约为 (model size):{model_memory:.2f} MB")
 
     optimizer = torch.optim.AdamW(
         net.parameters(),
         lr=args.lr,
-        betas=(0.9, 0.999),  # 默认值，适合大多数情况
+        betas=(0.9, 0.999),  # 默认值, 适合大多数情况
         weight_decay=args.weight_decay,
     )
     loss_fn = nn.CrossEntropyLoss(reduction="none")
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     mbin_files = glob.glob(os.path.join(args.dataset_path, "**/*.mbin"), recursive=True)
     if not mbin_files:
         if args.local_rank == 0:
-            print("❌ 未找到.mbin文件，请先运行数据转换")
+            print("❌ 未找到.mbin文件, 请先运行数据转换")
         exit(1)
     
     if args.local_rank == 0:
@@ -220,7 +220,7 @@ if __name__ == "__main__":
             filtered_dimension_groups[dims] = files
         else:
             if args.local_rank == 0:
-                print(f"跳过太小的地图尺寸 {dims}，包含 {len(files)} 个文件")
+                print(f"跳过太小的地图尺寸 {dims}, 包含 {len(files)} 个文件")
     
     dimension_groups = filtered_dimension_groups
     
@@ -233,9 +233,6 @@ if __name__ == "__main__":
     for dims, files in dimension_groups.items():
         n_files = len(files)
         indices = list(range(n_files))
-        
-        if not args.distributed:
-            random.shuffle(indices)
         
         n_test = int(0.1 * n_files)
         test_indices = indices[:n_test]
@@ -257,14 +254,12 @@ if __name__ == "__main__":
 
         train_loader = DataLoader(
             train_data,
-            shuffle=(train_sampler is None),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             sampler=train_sampler
         )
         val_loader = DataLoader(
             test_data,
-            shuffle=(val_sampler is None),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             sampler=val_sampler

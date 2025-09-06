@@ -19,7 +19,7 @@ def get_action(cur_pos, next_pos):
         (1, 0): 4,   # 下
     }
     
-    # 返回对应的动作，如果没有匹配则返回 0
+    # 返回对应的动作, 如果没有匹配则返回 0
     return action_map.get((dx, dy), 0)
     
 def convert_path_to_bin(file_name):

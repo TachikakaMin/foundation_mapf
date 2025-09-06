@@ -17,7 +17,7 @@ class CachedDistanceMapReader:
     
     @staticmethod
     def get_distance_map(map_file_path):
-        """获取距离地图，使用缓存避免重复加载"""
+        """获取距离地图, 使用缓存避免重复加载"""
         global _distance_map_cache
         
         # 首先尝试C++生成的二进制格式
@@ -32,7 +32,7 @@ class CachedDistanceMapReader:
                 _distance_map_cache[cpp_file_path] = reader
                 return reader
             except Exception:
-                pass  # 如果加载失败，回退到pickle格式
+                pass  # 如果加载失败, 回退到pickle格式
         
         # 回退到Python的pickle格式
         pkl_file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".pkl")
@@ -46,7 +46,7 @@ class CachedDistanceMapReader:
                 _distance_map_cache[pkl_file_path] = distance_map
                 return distance_map
         
-        # 如果两种格式都不存在，抛出错误
+        # 如果两种格式都不存在, 抛出错误
         raise FileNotFoundError(f"距离地图文件不存在: {cpp_file_path} 或 {pkl_file_path}")
 
 def read_distance_map_cached(map_file_path):

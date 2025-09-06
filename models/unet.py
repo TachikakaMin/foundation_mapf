@@ -41,9 +41,9 @@ class UNet(nn.Module):
 
     def use_checkpointing(self):
         """checkpoint通过在前向传播过程中
-           保存某些关键的激活值，而不是保存所有中间层的激活值。
-           这样，在反向传播时，需要重新计算那些未保存的激活值。
-           尽管增加了计算开销（因为有些前向计算需要重新执行），但节省了大量的显存
+           保存某些关键的激活值, 而不是保存所有中间层的激活值。
+           这样, 在反向传播时, 需要重新计算那些未保存的激活值。
+           尽管增加了计算开销（因为有些前向计算需要重新执行）, 但节省了大量的显存
         """
         self.input_conv = torch.utils.checkpoint(self.input_conv)
         self.down1 = torch.utils.checkpoint(self.down1)

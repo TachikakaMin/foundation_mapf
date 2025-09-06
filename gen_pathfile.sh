@@ -15,17 +15,17 @@ fi
 
 # 检查LACAM二进制文件
 if [ ! -f "data_generation_LACAM/lacam3/build/main" ]; then
-    echo "错误: LACAM 二进制文件不存在，请先编译"
+    echo "错误: LACAM 二进制文件不存在, 请先编译"
     exit 1
 fi
 
 # 创建输出目录
 mkdir -p data/path_files
 
-# 获取CPU核心数，设置并行度
+# 获取CPU核心数, 设置并行度
 CPU_CORES=$(nproc)
 PARALLEL_JOBS=$((CPU_CORES * 2))  # 使用2倍CPU核心数
-echo "检测到 $CPU_CORES 个CPU核心，设置并行任务数: $PARALLEL_JOBS"
+echo "检测到 $CPU_CORES 个CPU核心, 设置并行任务数: $PARALLEL_JOBS"
 
 for map_file in data/map_files/maze-*/*.map; do
     # Extract the map pattern from the full path (e.g., maze-64-64-10-1-0.1)

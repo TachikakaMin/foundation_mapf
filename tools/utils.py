@@ -251,7 +251,7 @@ def read_map(map_file_path):
 
 def read_distance_map(map_file_path):
     """
-    读取距离地图，优先使用C++生成的二进制格式，回退到Python的pickle格式
+    读取距离地图, 优先使用C++生成的二进制格式, 回退到Python的pickle格式
     """
     # 首先尝试C++生成的二进制格式
     cpp_file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".dmap")
@@ -261,14 +261,14 @@ def read_distance_map(map_file_path):
             reader = DistanceMapReader(cpp_file_path)
             return reader
         except ImportError:
-            pass  # 如果无法导入，回退到pickle格式
+            pass  # 如果无法导入, 回退到pickle格式
     
     # 回退到Python的pickle格式
     pkl_file_path = map_file_path.replace("map_files", "distance_maps").replace(".map", ".pkl")
     if os.path.exists(pkl_file_path):
         return pickle.load(open(pkl_file_path, "rb"))
     
-    # 如果两种格式都不存在，抛出错误
+    # 如果两种格式都不存在, 抛出错误
     raise FileNotFoundError(f"距离地图文件不存在: {cpp_file_path} 或 {pkl_file_path}")
 
 def calculate_single_point_distances(args):
@@ -326,7 +326,7 @@ def parse_coordinates(coord_str):
     # 使用正则表达式提取所有坐标对
     coord_pairs = re.findall(r"\((\d+),(\d+)\)", coord_str)
     
-    # 解析每个坐标对，并交换 x 和 y
+    # 解析每个坐标对, 并交换 x 和 y
     coords = [(int(y), int(x)) for x, y in coord_pairs]
     
     return coords

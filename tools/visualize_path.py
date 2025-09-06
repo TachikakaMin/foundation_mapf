@@ -181,7 +181,7 @@ def visualize_path(all_paths, all_goal_locations, file_name, video_path=None, sh
             update(current_frame)
             # 设置下一帧的定时器
             fig.canvas.start_event_loop(0.01)  # 10ms 延迟
-            if is_playing:  # 再次检查，避免在暂停后继续
+            if is_playing:  # 再次检查, 避免在暂停后继续
                 fig.canvas.draw_idle()
                 update_frame()
 
