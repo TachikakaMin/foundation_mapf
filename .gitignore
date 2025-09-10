@@ -2,6 +2,7 @@ sample_data/
 eval_traj/
 *.gz
 data_generation_LACAM/lacam3/
+tools/convert_path_to_mbin
 data_empty/
 runs/
 *.zip
