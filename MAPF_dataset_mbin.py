@@ -78,13 +78,13 @@ class MAPFDataset(Dataset):
 
     def parse_map_name_from_mbin(self, file_name):
         """从.mbin文件名解析地图名称"""
-        # 文件名格式：maze-32-32-30-4-85-0-128.mbin
+        # 文件名格式: maze-32-32-30-4-85-0-128.mbin
         basename = os.path.basename(file_name).replace('.mbin', '')
         parts = basename.split('-')
         
         if len(parts) >= 8:
-            # 地图模式：maze-32-32-30-4-85 (前6个部分)
-            # 地图ID：0 (第7个部分)
+            # 地图模式: maze-32-32-30-4-85 (前6个部分)
+            # 地图ID: 0 (第7个部分)
             map_pattern = '-'.join(parts[:6])  # maze-32-32-30-4-85
             map_id = parts[6]  # 0
             map_name = f"data/map_files/{map_pattern}/{map_pattern}-{map_id}.map"
@@ -98,7 +98,7 @@ class MAPFDataset(Dataset):
                 else:
                     raise FileNotFoundError(f"地图文件不存在: {map_name}")
         else:
-            # 回退方案：从目录结构推断
+            # 回退方案: 从目录结构推断
             dir_parts = file_name.split('/')
             for part in dir_parts:
                 if part.startswith('maze-') and part.count('-') >= 4:

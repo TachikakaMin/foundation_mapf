@@ -41,12 +41,19 @@ def move_agent(action, map_data, current_locations, temperature):
     while True:
         collision_flag = False
         
-        # Create a tensor to count occurrences of each position
-        unique_positions, counts = torch.unique(tmp_current_locs, dim=0, return_counts=True)
-        collision_positions = unique_positions[counts > 1]
+        # Create occupancy map: obstacles + agent positions
+        occupancy_map = map_data.clone()  # Start with obstacles (map_data != 0 are obstacles)
+        
+        # Add agent positions to occupancy map
+        for i in range(agent_num):
+            pos = tmp_current_locs[i]
+            occupancy_map[pos[0], pos[1]] += 1
+        
+        # Find collision positions (occupancy > 1 means collision with obstacle or other agents)
+        collision_positions = torch.nonzero(occupancy_map > 1, as_tuple=False)
         
         if len(collision_positions) > 0:
-            # Find all agents that moved to collision positions
+            # Find all agents that are at collision positions
             for collision_pos in collision_positions:
                 # Find agents at this collision position
                 collision_mask = (tmp_current_locs == collision_pos).all(dim=1)
@@ -80,6 +87,11 @@ def move_agent(action, map_data, current_locations, temperature):
                         collision_flag_per_agent[new_agent_id] = True  
         if not collision_flag:
             break
+    
+    # Increase temperature for agents that failed to move due to collision
+    temperature = temperature*0+1
+    temperature[collision_flag_per_agent] *= 1  # Increase by 10%
+    
     return tmp_current_locs, temperature
 
 

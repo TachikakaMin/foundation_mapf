@@ -85,7 +85,7 @@ static PyObject* construct_input_feature_cpp(PyObject* self, PyObject* args) {
     long* agent_loc_ptr = (long*)PyArray_DATA(agent_locations);
     long* goal_loc_ptr = (long*)PyArray_DATA(goal_locations);
     
-    // 第0层：复制地图数据
+    // 第0层: 复制地图数据
     for (int i = 0; i < height; ++i) {
         for (int j = 0; j < width; ++j) {
             int idx = i * width + j;
@@ -93,7 +93,7 @@ static PyObject* construct_input_feature_cpp(PyObject* self, PyObject* args) {
         }
     }
     
-    // 第1层：智能体位置
+    // 第1层: 智能体位置
     for (int i = 0; i < agent_num; ++i) {
         int x = agent_loc_ptr[i * 2];
         int y = agent_loc_ptr[i * 2 + 1];
@@ -103,7 +103,7 @@ static PyObject* construct_input_feature_cpp(PyObject* self, PyObject* args) {
         }
     }
     
-    // 第2层：目标位置
+    // 第2层: 目标位置
     for (int i = 0; i < agent_num; ++i) {
         int x = goal_loc_ptr[i * 2];
         int y = goal_loc_ptr[i * 2 + 1];
@@ -113,7 +113,7 @@ static PyObject* construct_input_feature_cpp(PyObject* self, PyObject* args) {
         }
     }
     
-    // 第3层及以上：距离和梯度特征
+    // 第3层及以上: 距离和梯度特征
     if (feature_dim >= 4) {
         std::vector<float> distances(agent_num);
         
