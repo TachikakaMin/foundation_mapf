@@ -22,13 +22,19 @@ def move_agent(action, map_data, current_locations, temperature):
     device = current_locations.device
     height, width = map_data.shape
     tmp_current_locs = current_locations.clone()
+    
+    # 确保action、map_data和temperature在与current_locations相同的设备上
+    action = action.to(device)
+    map_data = map_data.to(device)
+    temperature = temperature.to(device)
+    
     # 获取每个agent位置的动作
     act_dirs = action[current_locations[:, 0], current_locations[:, 1]]
-    # 创建移动方向的掩码
-    up_mask = (act_dirs == 1).to(torch.int32)
-    down_mask = (act_dirs == 2).to(torch.int32)
-    left_mask = (act_dirs == 3).to(torch.int32)
-    right_mask = (act_dirs == 4).to(torch.int32)
+    # 创建移动方向的掩码，确保在正确的设备上
+    up_mask = (act_dirs == 1).to(torch.int32).to(device)
+    down_mask = (act_dirs == 2).to(torch.int32).to(device)
+    left_mask = (act_dirs == 3).to(torch.int32).to(device)
+    right_mask = (act_dirs == 4).to(torch.int32).to(device)
     # 一次性更新所有agent的位置
     tmp_current_locs[:, 1] += up_mask
     tmp_current_locs[:, 1] -= down_mask
@@ -37,7 +43,7 @@ def move_agent(action, map_data, current_locations, temperature):
     # 使用与张量相同设备上的边界值进行裁剪
     tmp_current_locs[:, 0].clamp_(0, torch.tensor(height - 1, device=device))
     tmp_current_locs[:, 1].clamp_(0, torch.tensor(width - 1, device=device))
-    collision_flag_per_agent = torch.zeros(agent_num, dtype=torch.bool)
+    collision_flag_per_agent = torch.zeros(agent_num, dtype=torch.bool, device=device)
     while True:
         collision_flag = False
         
@@ -117,6 +123,8 @@ def sample_action(
         probs = logits.squeeze(0).permute((1, 2, 0)).argmax(-1)
 
     mask = (feature[1] > 0).float()
+    # 确保mask和probs在同一设备上
+    mask = mask.to(probs.device)
     action = probs * mask
     return action
 

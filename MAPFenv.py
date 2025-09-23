@@ -33,7 +33,7 @@ class MAPFEnv:
         self.max_steps = max_steps
         self.feature_dim = feature_dim
         self.feature_type = feature_type
-        
+        self.priorities = torch.rand((num_agents,),dtype=torch.float32)
         # 环境状态
         self.current_step = 0
         self.map_data = None

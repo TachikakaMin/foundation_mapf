@@ -7,75 +7,146 @@ import torch
 import numpy as np
 import argparse
 import os
+import sys
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from MAPFenv import MAPFEnv
 from tools.path_formation import sample_action
 
 
-def example_usage():
-    """示例: 如何使用简化的MAPF环境"""
+
+
+def filter_wall_collisions(env, action_probabilities):
+    """
+    过滤掉会撞墙的动作概率
     
-    # 创建环境
-    env = MAPFEnv(
-        height=32,          # 地图高度
-        width=32,           # 地图宽度  
-        num_agents=8,       # 代理数量
-        obstacle_density=0.2, # 障碍物密度
-        max_steps=100,      # 最大步数
-        feature_dim=6,      # 特征维度
-        feature_type="gradient"  # 特征类型
-    )
+    参数:
+        env: MAPFEnv环境对象
+        action_probabilities: 每个智能体的动作概率 [num_agents, 5]
     
-    print("环境创建完成!")
+    返回:
+        filtered_probabilities: 过滤后的动作概率 [num_agents, 5]
+    """
+    device = action_probabilities.device
+    filtered_probs = action_probabilities.clone()
     
-    # 重置环境
-    obs, info = env.reset()
-    print(f"观测形状: {obs.shape}")  # (4, 32, 32)
-    print(f"初始成功率: {info['success_rate']:.2%}")
+    # 定义5个动作的移动向量: [停留, 上, 下, 左, 右]
+    action_deltas = torch.tensor([
+        [0, 0],   # 0: 停留
+        [0, 1],  # 1: 上 (减少x坐标)
+        [0, -1],   # 2: 下 (增加x坐标)
+        [-1, 0],  # 3: 左 (减少x坐标)
+        [1, 0]    # 4: 右 (增加x坐标)
+    ], device=device)
     
-    # 模拟一个简单的训练循环
-    total_reward = 0
-    done = False
-    step = 0
+    for i, current_pos in enumerate(env.agent_positions):
+        # 确保current_pos与action_deltas在同一设备上
+        current_pos = current_pos.to(device)
+        for action_idx in range(5):  # 检查所有5个动作
+            # 计算执行该动作后的新位置
+            new_pos = current_pos + action_deltas[action_idx]
+            
+            # 检查是否超出地图边界
+            if (new_pos[0] < 0 or new_pos[0] >= env.height or 
+                new_pos[1] < 0 or new_pos[1] >= env.width):
+                filtered_probs[i, action_idx] = 0.0
+                continue
+            
+            # 检查是否撞到障碍物
+            if hasattr(env, 'map_data') and env.map_data is not None:
+                if env.map_data[new_pos[0], new_pos[1]] == 1:  # 1表示障碍物
+                    filtered_probs[i, action_idx] = 0.0
+                    continue
+            
+            # 如果环境有障碍物地图属性
+            if hasattr(env, 'obstacle_map') and env.obstacle_map is not None:
+                if env.obstacle_map[new_pos[0], new_pos[1]] == 1:
+                    filtered_probs[i, action_idx] = 0.0
+                    continue
     
-    while not done and step < 20:  # 最多20步
-        step += 1
-        
-        # 模拟神经网络输出 (这里用随机值代替)
-        # 实际使用时，这应该是你的神经网络的输出
-        network_output = torch.randn(5, env.height, env.width)
-        
-        # 从logits中采样动作
-        from tools.path_formation import sample_action
-        action_map = sample_action(
-            network_output.unsqueeze(0),  # 添加batch维度
-            env.agent_positions, 
-            env.temperature,
-            env.get_feature(),  # 需要feature来创建mask
-            action_choice="sample"
-        )
-        
-        # 执行步骤
-        next_obs, reward, done, truncated, info = env.step(action_map)
-        
-        total_reward += reward
-        
-        print(f"步骤 {step}: 奖励={reward:.2f}, 成功率={info['success_rate']:.2%}")
-        
-        if done:
-            print("🎉 所有代理都到达目标!")
-            break
-        
-        if truncated:
-            print("⏰ 达到最大步数限制")
-            break
+    # 确保每个agent至少有一个有效动作（停留动作总是有效的，除非当前位置就是障碍物）
+    for i in range(filtered_probs.shape[0]):
+        if filtered_probs[i].sum() == 0:
+            # 如果所有动作都被过滤掉了，至少保留停留动作
+            filtered_probs[i, 0] = 1e-6  # 给停留动作一个很小的概率
     
-    print(f"\n总奖励: {total_reward:.2f}")
-    print(f"最终成功率: {info['success_rate']:.2%}")
+    # 重新归一化概率
+    row_sums = filtered_probs.sum(dim=1, keepdim=True)
+    row_sums = torch.clamp(row_sums, min=1e-8)  # 避免除零
+    filtered_probs = filtered_probs / row_sums
     
-    # 渲染最终状态
-    env.render()
+    return filtered_probs
+
+
+def refine_actions_with_custom_pibt(env, action_probabilities, seed=0):
+    """
+    使用自定义单步PIBT算法来改进模型输出的动作概率
+    
+    参数:
+        env: MAPFEnv环境对象
+        action_probabilities: 每个智能体的动作概率 [num_agents, 5]
+        seed: 随机种子
+    
+    返回:
+        improved_actions: PIBT优化后的动作索引 [num_agents]
+    """
+    # 尝试导入自定义的PIBT模块
+    import sys
+    import os
+    pibt_path = os.path.join(os.path.dirname(__file__), "pibt2")
+    if pibt_path not in sys.path:
+        sys.path.insert(0, pibt_path)
+    
+    from pibt_wrapper import pibt_solve_single_step
+    
+    # 使用自定义PIBT求解
+    actions = pibt_solve_single_step(env, action_probabilities, seed=seed)
+    
+    return actions
+        
+
+
+def convert_actions_to_action_map(env, actions):
+    """
+    将动作索引数组转换为action_map格式
+    
+    参数:
+        env: MAPFEnv环境对象
+        actions: 每个智能体的动作索引 [num_agents]
+    
+    返回:
+        action_map: 地图格式的动作 [height, width]
+    """
+    device = env.agent_positions.device
+    action_map = torch.zeros(env.height, env.width, dtype=torch.long, device=device)
+    
+    # 将每个智能体的动作设置到其当前位置上
+    for i, action in enumerate(actions):
+        pos = env.agent_positions[i]
+        action_map[pos[0], pos[1]] = action
+    
+    return action_map
+
+
+def pibt_action_refinement(env, action_probabilities, seed=0, sampling=True):
+    """
+    便捷函数：使用PIBT改进动作并转换为action_map格式
+    
+    参数:
+        env: MAPFEnv环境对象
+        action_probabilities: 每个智能体的动作概率 [num_agents, 5]
+        seed: 随机种子
+        sampling: 是否使用采样 (仅对原始PIBT有效)
+    
+    返回:
+        action_map: 可直接用于env.step()的action_map [height, width]
+    """
+    # 使用PIBT改进动作
+    improved_actions = refine_actions_with_custom_pibt(env, action_probabilities, seed=seed)
+    # 转换为action_map格式
+    action_map = convert_actions_to_action_map(env, improved_actions)
+    
+    return action_map
 
 
 def save_frames_as_video(frames, output_path, fps=5, format='mp4'):
@@ -150,10 +221,10 @@ def save_frames_as_video(frames, output_path, fps=5, format='mp4'):
     plt.close(fig)
 
 
-def example_with_pretrained_model(model_path, feature_dim=4, first_layer_channels=64, bilinear=False, save_video=False, output_dir="videos"):
+def example_with_pretrained_model(model_path, feature_dim=4, first_layer_channels=64, bilinear=False, test_pibt=False, save_video=False, output_dir="videos"):
     """示例: 使用预训练模型"""
     from models.unet import UNet
-    max_episode_steps = 1000
+    max_episode_steps = 20
     print(f"加载模型: {model_path}")
     
     # 创建环境 - 使用较小的尺寸以便观察
@@ -208,14 +279,46 @@ def example_with_pretrained_model(model_path, feature_dim=4, first_layer_channel
         with torch.no_grad():
             logits, _ = model(obs_tensor)  # [1, 5, H, W]
         
-        # 从logits中采样动作
-        action_map = sample_action(
-            logits,
-            env.agent_positions, 
-            env.temperature,
-            env.get_feature(),
-            action_choice="sample"
-        )
+        if args.test_pibt:
+            # 从logits中获取每个智能体位置的动作概率
+            agent_positions = env.agent_positions  # [num_agents, 2]
+            
+            # 提取每个智能体位置的logits作为动作概率
+            action_probabilities = torch.zeros(env.num_agents, 5, device=device)
+            for i, pos in enumerate(agent_positions):
+                action_probabilities[i] = logits[0, :, pos[0], pos[1]]
+            
+            # 应用softmax归一化
+            action_probabilities = torch.softmax(action_probabilities, dim=-1)
+            
+            # ⭐ 过滤掉会撞墙的动作
+            filtered_action_probabilities = filter_wall_collisions(env, action_probabilities)
+            
+            # 计算过滤统计信息
+            original_valid = (action_probabilities > 1e-6).sum().item()
+            filtered_valid = (filtered_action_probabilities > 1e-6).sum().item()
+            
+            # 使用过滤后的动作概率进行PIBT改进并转换为action_map格式
+            action_map = pibt_action_refinement(env, filtered_action_probabilities, seed=step, sampling=True)
+            
+            print(f"步骤 {step + 1:2d}: 过滤前有效动作={original_valid}, 过滤后有效动作={filtered_valid}, action_map形状={action_map.shape}")
+        
+        else:
+            # 从logits中采样动作
+            feature = env.get_feature()
+            # 确保feature在与logits相同的设备上
+            if isinstance(feature, torch.Tensor):
+                feature = feature.to(device)
+            elif isinstance(feature, (list, tuple)):
+                feature = [f.to(device) if isinstance(f, torch.Tensor) else f for f in feature]
+            
+            action_map = sample_action(
+                logits,
+                env.agent_positions, 
+                env.temperature,
+                feature,
+                action_choice="sample"
+            )
         
         # 环境执行步骤
         next_obs, reward, done, truncated, info = env.step(action_map)
@@ -302,16 +405,18 @@ def parse_args():
         default="videos",
         help="视频输出目录"
     )
+    parser.add_argument(
+        "--test_pibt", 
+        action="store_true", 
+        default=False,
+        help="是否运行PIBT动作改进测试"
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    
-    if args.test_random:
-        print("=== 随机动作测试 ===")
-        example_usage()
-        print()
+
     
     # 检查模型文件是否存在
     if os.path.exists(args.model_path):
@@ -321,6 +426,7 @@ if __name__ == "__main__":
             feature_dim=args.feature_dim,
             first_layer_channels=args.first_layer_channels,
             bilinear=args.bilinear,
+            test_pibt=args.test_pibt,
             save_video=args.save_video,
             output_dir=args.output_dir
         )

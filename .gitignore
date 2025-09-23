@@ -21,6 +21,12 @@ data_h5/
 data_agent*
 test_data/
 cache/
+
+# Ignore entire pibt2 folder except specific files we want to track
+pibt2/*
+!pibt2/pibt_wrapper.py
+!pibt2/single_step_pibt.cpp
+!pibt2/single_step_pibt.hpp
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
