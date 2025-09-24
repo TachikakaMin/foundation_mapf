@@ -78,31 +78,75 @@ def filter_wall_collisions(env, action_probabilities):
     return filtered_probs
 
 
-def refine_actions_with_custom_pibt(env, action_probabilities, seed=0):
+def calculate_time_based_priorities(env, agent_time_counters=None):
+    """
+    计算基于时间的动态优先级
+    - 在目标点上的agent优先级=0
+    - 离开目标点的agent开始累积优先级(时间越长优先级越高)
+
+    参数:
+        env: MAPFEnv环境对象
+        agent_time_counters: 每个agent离开目标点的时间计数器
+
+    返回:
+        priorities: 每个agent的优先级 [num_agents]
+        updated_counters: 更新后的时间计数器
+    """
+    if agent_time_counters is None:
+        agent_time_counters = [0] * env.num_agents
+
+    priorities = []
+
+    for i in range(env.num_agents):
+        current_pos = env.agent_positions[i]  # [x, y]
+        goal_pos = env.goal_positions[i]      # [x, y]
+
+        # 检查是否在目标点
+        at_goal = (current_pos[0] == goal_pos[0] and current_pos[1] == goal_pos[1])
+
+        if at_goal:
+            # 在目标点，优先级清零，时间计数器重置
+            priorities.append(0.0)
+            agent_time_counters[i] = 0
+        else:
+            # 不在目标点，累积优先级
+            agent_time_counters[i] += 1
+            # 优先级与离开目标点的时间成正比
+            priorities.append(float(agent_time_counters[i]))
+
+    return np.array(priorities), agent_time_counters
+
+
+def refine_actions_with_custom_pibt(env, action_probabilities, seed=0, agent_time_counters=None):
     """
     使用自定义单步PIBT算法来改进模型输出的动作概率
-    
+
     参数:
         env: MAPFEnv环境对象
         action_probabilities: 每个智能体的动作概率 [num_agents, 5]
         seed: 随机种子
-    
+        agent_time_counters: 每个agent的时间计数器
+
     返回:
         improved_actions: PIBT优化后的动作索引 [num_agents]
+        updated_counters: 更新后的时间计数器
     """
     # 尝试导入自定义的PIBT模块
     import sys
     import os
-    pibt_path = os.path.join(os.path.dirname(__file__), "pibt2")
+    pibt_path = os.path.join(os.path.dirname(__file__), "single_pibt")
     if pibt_path not in sys.path:
         sys.path.insert(0, pibt_path)
-    
+
     from pibt_wrapper import pibt_solve_single_step
-    
-    # 使用自定义PIBT求解
-    actions = pibt_solve_single_step(env, action_probabilities, seed=seed)
-    
-    return actions
+
+    # 计算基于时间的动态优先级
+    priorities, updated_counters = calculate_time_based_priorities(env, agent_time_counters)
+
+    # 使用自定义PIBT求解（包含优先级）
+    actions = pibt_solve_single_step(env, action_probabilities, priorities=priorities, seed=seed)
+
+    return actions, updated_counters
         
 
 
@@ -128,25 +172,27 @@ def convert_actions_to_action_map(env, actions):
     return action_map
 
 
-def pibt_action_refinement(env, action_probabilities, seed=0, sampling=True):
+def pibt_action_refinement(env, action_probabilities, seed=0, sampling=True, agent_time_counters=None):
     """
     便捷函数：使用PIBT改进动作并转换为action_map格式
-    
+
     参数:
         env: MAPFEnv环境对象
         action_probabilities: 每个智能体的动作概率 [num_agents, 5]
         seed: 随机种子
         sampling: 是否使用采样 (仅对原始PIBT有效)
-    
+        agent_time_counters: 每个agent的时间计数器
+
     返回:
         action_map: 可直接用于env.step()的action_map [height, width]
+        updated_counters: 更新后的时间计数器
     """
     # 使用PIBT改进动作
-    improved_actions = refine_actions_with_custom_pibt(env, action_probabilities, seed=seed)
+    improved_actions, updated_counters = refine_actions_with_custom_pibt(env, action_probabilities, seed=seed, agent_time_counters=agent_time_counters)
     # 转换为action_map格式
     action_map = convert_actions_to_action_map(env, improved_actions)
-    
-    return action_map
+
+    return action_map, updated_counters
 
 
 def save_frames_as_video(frames, output_path, fps=5, format='mp4'):
@@ -224,14 +270,14 @@ def save_frames_as_video(frames, output_path, fps=5, format='mp4'):
 def example_with_pretrained_model(model_path, feature_dim=4, first_layer_channels=64, bilinear=False, test_pibt=False, save_video=False, output_dir="videos"):
     """示例: 使用预训练模型"""
     from models.unet import UNet
-    max_episode_steps = 20
+    max_episode_steps = 200
     print(f"加载模型: {model_path}")
     
     # 创建环境 - 使用较小的尺寸以便观察
     env = MAPFEnv(
         height=32, 
         width=32, 
-        num_agents=64, 
+        num_agents=128, 
         obstacle_density=0.15,
         max_steps=max_episode_steps,
         feature_dim=feature_dim
@@ -270,7 +316,10 @@ def example_with_pretrained_model(model_path, feature_dim=4, first_layer_channel
     
     total_reward = 0
     success_history = []
-    
+
+    # 初始化基于时间的优先级计数器（每个agent离开目标点的时间）
+    agent_time_counters = [0] * env.num_agents
+
     for step in range(max_episode_steps):  # 运行50步
         # 将观测转换为模型输入
         obs_tensor = torch.from_numpy(obs).unsqueeze(0).float().to(device)  # [1, feature_dim, H, W]
@@ -299,10 +348,21 @@ def example_with_pretrained_model(model_path, feature_dim=4, first_layer_channel
             filtered_valid = (filtered_action_probabilities > 1e-6).sum().item()
             
             # 使用过滤后的动作概率进行PIBT改进并转换为action_map格式
-            action_map = pibt_action_refinement(env, filtered_action_probabilities, seed=step, sampling=True)
-            
-            print(f"步骤 {step + 1:2d}: 过滤前有效动作={original_valid}, 过滤后有效动作={filtered_valid}, action_map形状={action_map.shape}")
-        
+            action_map, agent_time_counters = pibt_action_refinement(
+                env, filtered_action_probabilities,
+                seed=step, sampling=True,
+                agent_time_counters=agent_time_counters
+            )
+
+            # 显示优先级统计信息
+            agents_at_goal = sum(1 for counter in agent_time_counters if counter == 0)
+            max_priority = max(agent_time_counters)
+            avg_priority = sum(agent_time_counters) / len(agent_time_counters)
+
+            print(f"步骤 {step + 1:2d}: 过滤前有效动作={original_valid}, 过滤后有效动作={filtered_valid}, "
+                  f"在目标点={agents_at_goal}/{env.num_agents}, 最高优先级={max_priority:.0f}, "
+                  f"平均优先级={avg_priority:.1f}")
+
         else:
             # 从logits中采样动作
             feature = env.get_feature()
