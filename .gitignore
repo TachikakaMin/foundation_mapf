@@ -1,3 +1,7 @@
+pibt2/
+saved_model/
+videos/
+visualization_output/
 sample_data/
 eval_traj/
 *.gz
