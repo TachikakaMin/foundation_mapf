@@ -85,111 +85,199 @@ Project source documentation is under `doc/`, and the directory structure mirror
 
 The documentation currently covers the repository's project-owned source files and scripts, including Python modules, shell scripts, C++ sources, and CMake files. The index is available at `doc/README.md`.
 
-## Data Generation
+## Training Workflows
 
-### Map Generation
+This repo now has two distinct training workflows:
 
-Generate maps with different density, component and go_straight.
+- `offline`: pre-generate trajectories, convert them to `.mbin`, then train
+- `online`: generate training trajectories on the fly during training, but still use a fixed offline validation set
+
+Current note:
+
+- `train.py` still starts from CLI arguments
+- [config.offline.yaml](/home/yimin/research/RAILGUN/config.offline.yaml) and [config.online.yaml](/home/yimin/research/RAILGUN/config.online.yaml) are readable templates; use them as the source of truth when assembling your training command
+
+### Offline: From Data Prep to Training
+
+#### Step 1: Build C++ tools and extensions
+
+```bash
+cd tools
+bash build.sh build
+cd ..
+```
+
+#### Step 2: Generate maps
 
 ```bash
 height=32
 width=32
-# generate map files
-for density in $(seq 0.1 0.1 0.6); do 
-    for component in {1..10}; do
-        for go_straight in $(seq 0.75 0.05 0.85); do
-            num_maps=$(printf "%.0f" "$(echo "12 + (${density} * 30) - (${component} * 2)" | bc)")
-            python data_generation_LACAM/maze_generator.py --num_maps $num_maps --width $((width-2)) --height $((height-2)) --obstacle_density $density --wall_components $component --go_straight $go_straight
-        done
+
+for density in $(seq 0.1 0.1 0.6); do
+  for component in {1..10}; do
+    for go_straight in $(seq 0.75 0.05 0.85); do
+      num_maps=$(printf "%.0f" "$(echo "12 + (${density} * 30) - (${component} * 2)" | bc)")
+      python data_generation_LACAM/maze_generator.py \
+        --num_maps $num_maps \
+        --width $((width-2)) \
+        --height $((height-2)) \
+        --obstacle_density $density \
+        --wall_components $component \
+        --go_straight $go_straight
     done
+  done
 done
 ```
 
-### Path Generation
+Expected output:
 
-Generate paths with different number of agents and seeds.
+- maps under `data/map_files/...`
+
+#### Step 3: Generate path files with LACAM
 
 ```bash
 for map_file in data/map_files/maze-*/*.map; do
-    # Extract the map pattern from the full path (e.g., maze-64-64-10-1-0.1)
-    map_pattern=$(basename $(dirname "$map_file"))
-    map_name=$(basename "$map_file" .map)
-    density=$(echo "$map_name" | awk -F'-' '{print $4}')
+  map_pattern=$(basename "$(dirname "$map_file")")
+  map_name=$(basename "$map_file" .map)
+  density=$(echo "$map_name" | awk -F'-' '{print $4}')
 
-    # Define the N values and corresponding path calculations
-    for N in 128 96 64 32 16; do
-        case $N in
-            128) num_paths=$(echo "60 + $density * 2" | bc) ;;
-            96) num_paths=$(echo "40 + $density * 1" | bc) ;;
-            64) num_paths=$(echo "20 + $density * 0.8" | bc) ;;
-            32) num_paths=$(echo "5 + $density * 0.1" | bc) ;;
-            16) num_paths=$(echo "2 + $density * 0.1" | bc) ;;
-        esac
+  for N in 128 96 64 32 16; do
+    case $N in
+      128) num_paths=$(echo "60 + $density * 2" | bc) ;;
+      96) num_paths=$(echo "40 + $density * 1" | bc) ;;
+      64) num_paths=$(echo "20 + $density * 0.8" | bc) ;;
+      32) num_paths=$(echo "5 + $density * 0.1" | bc) ;;
+      16) num_paths=$(echo "2 + $density * 0.1" | bc) ;;
+    esac
 
-        # Convert num_paths to an integer
-        num_paths=$(printf "%.0f" "$num_paths")
+    num_paths=$(printf "%.0f" "$num_paths")
+    mkdir -p "data/path_files/${map_pattern}/${map_name}-${N}"
 
-        mkdir -p "data/path_files/${map_pattern}/${map_name}-${N}"
-        for seed in $(seq 1 ${num_paths}); do
-            output_file="data/path_files/${map_pattern}/${map_name}-${N}/${map_name}-${N}-${seed}.path"
-            if [ ! -f "$output_file" ]; then
-                echo "$map_pattern $map_name $N $seed"
-            fi
-        done
+    for seed in $(seq 1 ${num_paths}); do
+      output_file="data/path_files/${map_pattern}/${map_name}-${N}/${map_name}-${N}-${seed}.path"
+      if [ ! -f "$output_file" ]; then
+        echo "$map_pattern $map_name $N $seed"
+      fi
     done
-
+  done
 done | parallel --progress --bar --eta --timeout 10 --colsep ' ' \
-    'data_generation_LACAM/lacam3/build/main -m data/map_files/{1}/{2}.map -N {3} -s {4} -v 1 -o data/path_files/{1}/{2}-{3}/{2}-{3}-{4}.path'
+  'data_generation_LACAM/lacam3/build/main -m data/map_files/{1}/{2}.map -N {3} -s {4} -v 1 -o data/path_files/{1}/{2}-{3}/{2}-{3}-{4}.path'
 ```
 
-### Convert Path to Input Data And Precompute Distance Maps
+Expected output:
 
-**高性能C++路径转换工具 (推荐)**
+- path files under `data/path_files/...`
+
+#### Step 4: Convert `.path` to `.mbin` and precompute distance maps
+
+Recommended C++ path converter:
 
 ```bash
-# 编译C++转换工具
-cd tools && bash build.sh converter && cd ..
+cd tools
+bash build.sh converter
+cd ..
 
-# 使用C++工具转换 (比Python版本快5-10倍)
 ./tools/convert_path_to_mbin data/path_files
-
-# 预计算距离地图
 python -m tools.precompute_distance_maps data/map_files
 ```
 
-**Python版本 (兼容性)**
+Python fallback:
 
 ```bash
 python -m tools.convert_lacam_path_to_bin data/path_files
 python -m tools.precompute_distance_maps data/map_files
 ```
 
-**性能对比:**
-- C++版本: 多线程并行 + 内存优化 → **5-10x 速度提升**
-- Python版本: 单线程处理 → 适合小规模数据
+Expected output:
 
-## Train
+- training / validation `.mbin` under `data/input_data/...`
+- distance maps under `data/distance_maps/...`
+
+#### Step 5: Check required offline directories
+
+Before training, make sure these exist:
+
+- `data/map_files`
+- `data/distance_maps`
+- `data/input_data`
+
+#### Step 6: Launch offline training
+
+Single GPU:
 
 ```bash
-# offline training, single GPU
-python train.py --batch_size 64
-
-# offline training, multi-GPU
-torchrun --nproc_per_node=8 train.py --batch_size 8 --distributed 
+python train.py \
+  --dataset_mode offline \
+  --dataset_path data/input_data \
+  --batch_size 64 \
+  --epochs 100 \
+  --eval_interval 2 \
+  --save_interval 2
 ```
 
-### Online Train
-
-Online mode no longer requires pre-generated training `.mbin` files. Training trajectories are generated on the fly inside DataLoader workers through the native `lacam_online_native` extension.
-
-Requirements:
-
-- maps must already exist under `data/map_files` or `--train_map_path`
-- distance maps must already exist for those maps
-- validation remains offline and fixed, so `--val_dataset_path` should point to existing `.mbin` files
+Multi-GPU:
 
 ```bash
-# online training, offline validation
+torchrun --nproc_per_node=8 train.py \
+  --dataset_mode offline \
+  --dataset_path data/input_data \
+  --batch_size 8 \
+  --distributed
+```
+
+### Online: From Data Prep to Training
+
+Online mode does not require pre-generated training `.mbin`, but it still requires maps, distance maps, and a fixed offline validation set.
+
+#### Step 1: Build C++ tools and extensions
+
+```bash
+cd tools
+bash build.sh build
+cd ..
+```
+
+#### Step 2: Generate maps
+
+Use the same map generation step as offline mode. The result must be written to `data/map_files/...`.
+
+#### Step 3: Precompute distance maps for those maps
+
+```bash
+python -m tools.precompute_distance_maps data/map_files
+```
+
+Expected output:
+
+- distance maps under `data/distance_maps/...`
+
+#### Step 4: Prepare a fixed offline validation set
+
+Online training still validates on offline `.mbin`, so you need a validation dataset prepared in advance.
+
+Minimal path:
+
+1. Generate maps
+2. Generate LACAM `.path`
+3. Convert `.path` to `.mbin`
+
+You can reuse the same commands from the offline workflow, but you only need enough `.mbin` for validation, not for online training itself.
+
+Expected output:
+
+- validation `.mbin` under `data/input_data/...` or another directory passed via `--val_dataset_path`
+
+#### Step 5: Check required online directories
+
+Before training, make sure these exist:
+
+- `data/map_files`
+- `data/distance_maps`
+- `data/input_data` or your custom validation root
+
+#### Step 6: Launch online training
+
+```bash
 python train.py \
   --dataset_mode online \
   --train_map_path data/map_files \
@@ -198,21 +286,16 @@ python train.py \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
+  --online_time_limit_sec 5 \
+  --online_retry_limit 20 \
   --batch_size 64 \
   --num_workers 2
 ```
 
-Key arguments for online mode:
+Online mode key idea:
 
-- `--dataset_mode online`
-- `--train_map_path`: map root used for online scenario generation
-- `--val_dataset_path`: fixed offline validation `.mbin` root
-- `--online_total_steps`: total optimizer steps
-- `--online_eval_interval_steps`: validation cadence in optimizer steps
-- `--online_save_interval_steps`: checkpoint cadence in optimizer steps
-- `--online_inference_test_interval_steps`: inference test cadence in optimizer steps
-- `--online_time_limit_sec`: per-scenario LACAM solve limit
-- `--online_retry_limit`: retries before a worker fails
+- training progress is controlled by optimizer steps, not epochs
+- validation / save / inference test are also step-based
 
 ### Where To Change Parameters
 
