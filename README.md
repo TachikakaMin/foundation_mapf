@@ -65,6 +65,7 @@ cd ..
 **Available Tools:**
 - 🔄 **路径转换工具**: 高性能多线程.path到.mbin转换
 - ⚡ **C++扩展**: 高性能特征构建和数据处理
+- 🧠 **在线LACAM扩展**: 训练时直接在内存中生成轨迹场景
 
 **Important Notes:**
 - The build script automatically detects and uses the currently activated Python environment
@@ -79,6 +80,8 @@ Project source documentation is under `doc/`, and the directory structure mirror
 - Source file `models/unet.py` maps to `doc/models/unet.py.md`
 - Source file `tools/build.sh` maps to `doc/tools/build.sh.md`
 - Source file `data_generation_LACAM/maze_generator.py` maps to `doc/data_generation_LACAM/maze_generator.py.md`
+- Source file `MAPF_online_dataset.py` maps to `doc/MAPF_online_dataset.py.md`
+- Source file `tools/extensions/lacam_online_native.cpp` maps to `doc/tools/extensions/lacam_online_native.cpp.md`
 
 The documentation currently covers the repository's project-owned source files and scripts, including Python modules, shell scripts, C++ sources, and CMake files. The index is available at `doc/README.md`.
 
@@ -168,11 +171,123 @@ python -m tools.precompute_distance_maps data/map_files
 ## Train
 
 ```bash
-# single GPU
+# offline training, single GPU
 python train.py --batch_size 64
-# multi-GPUS
+
+# offline training, multi-GPU
 torchrun --nproc_per_node=8 train.py --batch_size 8 --distributed 
 ```
+
+### Online Train
+
+Online mode no longer requires pre-generated training `.mbin` files. Training trajectories are generated on the fly inside DataLoader workers through the native `lacam_online_native` extension.
+
+Requirements:
+
+- maps must already exist under `data/map_files` or `--train_map_path`
+- distance maps must already exist for those maps
+- validation remains offline and fixed, so `--val_dataset_path` should point to existing `.mbin` files
+
+```bash
+# online training, offline validation
+python train.py \
+  --dataset_mode online \
+  --train_map_path data/map_files \
+  --val_dataset_path data/input_data \
+  --online_total_steps 200000 \
+  --online_eval_interval_steps 4000 \
+  --online_save_interval_steps 4000 \
+  --online_inference_test_interval_steps 4000 \
+  --batch_size 64 \
+  --num_workers 2
+```
+
+Key arguments for online mode:
+
+- `--dataset_mode online`
+- `--train_map_path`: map root used for online scenario generation
+- `--val_dataset_path`: fixed offline validation `.mbin` root
+- `--online_total_steps`: total optimizer steps
+- `--online_eval_interval_steps`: validation cadence in optimizer steps
+- `--online_save_interval_steps`: checkpoint cadence in optimizer steps
+- `--online_inference_test_interval_steps`: inference test cadence in optimizer steps
+- `--online_time_limit_sec`: per-scenario LACAM solve limit
+- `--online_retry_limit`: retries before a worker fails
+
+### Where To Change Parameters
+
+训练参数统一定义在 `train_args.py`，训练入口在 `train.py`。推荐做法是直接在命令行传参；如果想改默认值，再改 `train_args.py`。
+
+仓库根目录现在提供了两套默认模板：
+
+- [config.offline.yaml](/home/yimin/research/RAILGUN/config.offline.yaml): 离线训练 / 离线验证
+- [config.online.yaml](/home/yimin/research/RAILGUN/config.online.yaml): 在线训练 / 离线验证
+
+[config.yaml](/home/yimin/research/RAILGUN/config.yaml) 目前保留为默认离线模板的兼容入口。
+
+训练启动后，`train.py` 会打印一份 `Runtime Config` 表，里面会直接显示当前模型大小、数据模式、训练周期、验证周期和 inference test 配置。
+
+### Training Parameter Table
+
+| Category | Args | Meaning |
+| --- | --- | --- |
+| Data | `--dataset_mode` | `offline` 读 `.mbin`；`online` 训练时在线生成 |
+| Data | `--dataset_path` | 离线训练/验证的 `.mbin` 根目录 |
+| Data | `--val_dataset_path` | 固定离线验证集根目录，不填则回退到 `--dataset_path` |
+| Data | `--train_map_path` | 在线训练时扫描 `.map` 的根目录 |
+| Data | `--num_workers` | PyTorch DataLoader worker 数 |
+| Online train | `--online_total_steps` | 在线训练总优化步数 |
+| Online train | `--online_eval_interval_steps` | 在线训练按多少步做一次验证 |
+| Online train | `--online_save_interval_steps` | 在线训练按多少步保存一次 checkpoint |
+| Online train | `--online_inference_test_interval_steps` | 在线训练按多少步做一次 inference test |
+| Online train | `--online_time_limit_sec` | 单次 LACAM 在线生成的时间上限 |
+| Online train | `--online_retry_limit` | 单个 worker 生成失败时的重试次数 |
+| Optimization | `--epochs` | 只用于离线模式 |
+| Optimization | `--batch_size` | batch size |
+| Optimization | `--learning_rate` | 学习率 |
+| Optimization | `--weight_decay` | AdamW 的权重衰减 |
+| Training loop | `--eval_interval` | 离线模式下每隔多少个 epoch 做一次验证 loss |
+| Training loop | `--save_interval` | 离线模式下每隔多少个 epoch 保存一次 checkpoint |
+| Model | `--model` | `unet` 或 `cnn` |
+| Model | `--first_layer_channels` | `UNet` 首层通道数，直接影响模型大小 |
+| Model | `--feature_dim` | 输入特征维度 |
+| Model | `--feature_type` | 特征构造方式，例如 `gradient` |
+| Model | `--action_dim` | 动作类别数，默认 5 |
+| Inference test | `--sample_data_path` | 训练中固定用于 inference test 的离线 `.mbin` 样本 |
+| Inference test | `--inference_num_cases` | 每次 inference test 跑多少个固定样本 |
+| Inference test | `--inference_test_interval` | 离线模式下每隔多少个 epoch 跑一次 inference test；`0` 表示复用 `--eval_interval` |
+| Inference test | `--inference_action_choice` | inference rollout 用 `sample` 还是 `max` 选动作 |
+| Inference test | `--steps` | inference rollout 的最大步数 |
+
+### Inference Test During Training
+
+训练中现在有一个显式的 inference test，用固定离线样本做 rollout，检查模型是否真的会“走路”，而不只是看 supervised loss。
+
+- 样本来源：`--sample_data_path`
+- rollout 步数：`--steps`
+- 触发周期：
+  - `offline` 用 `--inference_test_interval`
+  - `online` 用 `--online_inference_test_interval_steps`
+- 输出指标：`total_cost`、`ep_length`、`makespan`、`isr`、`csr`、`final_distance`、`avg_density`、`total_time`、`throughput`
+
+```bash
+python train.py \
+  --dataset_mode online \
+  --train_map_path data/map_files \
+  --val_dataset_path data/input_data \
+  --online_total_steps 200000 \
+  --online_inference_test_interval_steps 4000 \
+  --sample_data_path data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
+  --inference_num_cases 1 \
+  --inference_action_choice max \
+  --steps 100
+```
+
+### Online vs Offline Config
+
+- `offline`：核心单位还是 `epochs`，因为训练集是固定离线 `.mbin`
+- `online`：核心单位是总训练步数 `online_total_steps`
+- `online` 的验证、保存和 inference test 也全部按 step 配置，不再复用 epoch 语义
 
 ## Evaluation Test
 ```bash

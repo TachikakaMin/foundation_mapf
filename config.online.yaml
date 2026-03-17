@@ -1,0 +1,39 @@
+# 默认在线训练配置。Default ONLINE training config.
+# 在线模式完全按步数驱动。Online mode is fully step-driven.
+
+# 日志与随机种子。Logging and seed.
+seed: 1919180  # 随机种子。Random seed.
+log_dir: runs  # TensorBoard 和日志输出目录。TensorBoard and log output directory.
+
+# 数据。Dataset.
+dataset_mode: online  # 数据模式，应保持为 online。Dataset mode; should stay as online.
+train_map_path: data/map_files  # 在线训练扫描地图的根目录。Root directory of maps used for online training.
+dataset_path: data/input_data  # 离线训练数据根目录，这里主要保留给验证和样例路径回退使用。Offline dataset root, mainly kept for validation and sample-path fallback.
+val_dataset_path: data/input_data  # 固定离线验证集根目录。Root directory of the fixed offline validation set.
+online_total_steps: 100000  # 在线训练总优化步数。Total optimizer steps for online training.
+online_eval_interval_steps: 2000  # 在线训练每隔多少步做一次验证。Run validation every N optimizer steps in online mode.
+online_save_interval_steps: 2000  # 在线训练每隔多少步保存一次 checkpoint。Save a checkpoint every N optimizer steps in online mode.
+online_inference_test_interval_steps: 2000  # 在线训练每隔多少步做一次 inference test。Run inference test every N optimizer steps in online mode.
+online_time_limit_sec: 5  # 单次在线生成场景的 LACAM 时间上限，单位秒。Time limit in seconds for one online LACAM scenario generation.
+online_retry_limit: 20  # 单个 worker 在线生成失败后的最大重试次数。Maximum retries for one worker when online generation fails.
+sample_data_path:  # 训练中 inference test 使用的固定离线 .mbin 样本列表。Fixed offline .mbin samples used by inference test during training.
+  - data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin
+inference_num_cases: 1  # 每次 inference test 运行的固定样本数量。Number of fixed sample cases evaluated in each inference test.
+inference_action_choice: max  # inference rollout 的动作选择策略，max 更稳定，sample 更随机。Action selection strategy for inference rollout; max is more stable while sample is more stochastic.
+num_workers: 2  # DataLoader worker 数。Number of DataLoader workers.
+
+# 优化。Optimization.
+batch_size: 64  # 训练 batch size。Training batch size.
+learning_rate: 1.0e-5  # 学习率。Learning rate.
+weight_decay: 1.0e-3  # AdamW 权重衰减。AdamW weight decay.
+
+# 模型与 rollout。Model and rollout.
+feature_dim: 6  # 输入特征维度。Input feature dimension.
+feature_type: gradient  # 特征构造方式。Feature construction type.
+steps: 100  # inference rollout 的最大步数。Maximum rollout steps for inference.
+action_dim: 5  # 动作类别数。Number of action classes.
+model: unet  # 模型类型，可选 unet 或 cnn。Model type, typically unet or cnn.
+bilinear: false  # 是否在 UNet 中使用双线性上采样。Whether to use bilinear upsampling in UNet.
+first_layer_channels: 64  # UNet 首层通道数，直接影响模型大小。First-layer channel count in UNet; directly affects model size.
+distributed: false  # 是否启用分布式训练。Whether to enable distributed training.
+model_path: null  # 预训练模型或断点权重路径，null 表示从头开始。Path to a pretrained model or checkpoint; null means train from scratch.

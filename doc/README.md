@@ -4,6 +4,8 @@
 
 - `models/unet.py` -> `doc/models/unet.py.md`
 - `tools/build.sh` -> `doc/tools/build.sh.md`
+- `MAPF_online_dataset.py` -> `doc/MAPF_online_dataset.py.md`
+- `tools/extensions/lacam_online_native.cpp` -> `doc/tools/extensions/lacam_online_native.cpp.md`
 
 每份文档都尽量覆盖这几类信息：
 
@@ -17,3 +19,10 @@
 - `data_generation_ECBS/ECBS`
 
 这类二进制的调用关系会在相关脚本文档中说明。
+
+在线训练相关入口可优先看：
+
+- `doc/train.py.md`
+- `doc/train_args.py.md`
+- `doc/MAPF_online_dataset.py.md`
+- `doc/tools/extensions/lacam_online_native.cpp.md`

@@ -112,17 +112,19 @@ def sample_action(
 def calculate_metrics(current_locations, goal_locations, steps_to_target, agent_num, all_densities, total_running_time, max_step, number_of_agent_reached_target):
     """Calculate all metrics for path formation evaluation."""
     current_goal_distance, success_rate = statistic_result(current_locations, goal_locations)
+    total_cost = int(steps_to_target.sum().item() + agent_num)
+    makespan = int(steps_to_target.max().item())
     
     metrics = {
-        'total_cost': steps_to_target.sum() + agent_num,  # Sum of cost
-        'ep_length': sum(steps_to_target) / agent_num + 1,  # Average episode length
-        'makespan': max(steps_to_target),  # Makespan
-        'isr': success_rate,  # Individual Success Rate
-        'csr': 1 if success_rate == 1 else 0,  # Complete Success Rate
-        'final_distance': current_goal_distance,
-        'avg_density': sum(all_densities) / len(all_densities) if all_densities else 0,
-        'total_time': total_running_time,
-        'throughput': number_of_agent_reached_target / max_step
+        'total_cost': total_cost,  # Sum of cost
+        'ep_length': float(total_cost / agent_num),  # Average episode length
+        'makespan': makespan,  # Makespan
+        'isr': float(success_rate),  # Individual Success Rate
+        'csr': int(success_rate == 1),  # Complete Success Rate
+        'final_distance': int(current_goal_distance),
+        'avg_density': float(sum(all_densities) / len(all_densities)) if all_densities else 0.0,
+        'total_time': float(total_running_time),
+        'throughput': float(number_of_agent_reached_target / max_step),
     }
     
     return metrics
@@ -135,7 +137,18 @@ def generate_from_possible_targets(possible_positions, position):
     return possible_positions[idx]
 
 
-def path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None, lifelong=False):
+def path_formation(
+    model,
+    val_loader,
+    idx,
+    device,
+    feature_type,
+    action_choice="sample",
+    steps=300,
+    log_file=None,
+    lifelong=False,
+    return_metrics=False,
+):
     def log_print(msg):
         print(msg)
         if log_file:
@@ -184,7 +197,8 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     for i in tqdm(range(steps), desc=f"Path Formation {path_name}"):
         # Model inference and action
         start_time = time.time()
-        logits, _ = model(feature.to(device).unsqueeze(0))
+        with torch.no_grad():
+            logits, _ = model(feature.to(device).unsqueeze(0))
         action = sample_action(logits.cpu(), current_locations, temperature, feature, action_choice)
         total_running_time += time.time() - start_time
 
@@ -223,6 +237,8 @@ def path_formation(model, val_loader, idx, device, feature_type, action_choice="
     # log_print(f"Average Density: {metrics['avg_density']:.4f}")
     # log_print(f"End Goal Distance: {metrics['final_distance']:.4f}, Success Rate: {metrics['isr']:.4f}")
     log_print(f"metrics: {metrics}")
+    if return_metrics:
+        return all_paths, all_goal_locations, metrics['final_distance'], file_name, metrics
     return all_paths, all_goal_locations, metrics['final_distance'], file_name
 
 
@@ -253,4 +269,3 @@ def calculate_step_density(current_locations, map_data):
             agent_densities.append(local_density)
     
     return agent_densities
-
