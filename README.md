@@ -40,6 +40,7 @@ cd data_generation_LACAM
 git clone --recursive https://github.com/Kei18/lacam3.git && cd lacam3
 cmake -B build && make -C build
 cd ../../
+```
 
 ## C++ Extensions and Tools Compilation
 
@@ -71,7 +72,15 @@ cd ..
 - The compiled extensions will be compatible with your current Python version
 - C++ tools provide 5-10x performance improvement over Python versions
 
-```
+## Documentation
+
+Project source documentation is under `doc/`, and the directory structure mirrors the source tree.
+
+- Source file `models/unet.py` maps to `doc/models/unet.py.md`
+- Source file `tools/build.sh` maps to `doc/tools/build.sh.md`
+- Source file `data_generation_LACAM/maze_generator.py` maps to `doc/data_generation_LACAM/maze_generator.py.md`
+
+The documentation currently covers the repository's project-owned source files and scripts, including Python modules, shell scripts, C++ sources, and CMake files. The index is available at `doc/README.md`.
 
 ## Data Generation
 
