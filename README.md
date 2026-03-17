@@ -38,7 +38,7 @@ apt install parallel -y
 brew install parallel
 cd data_generation_LACAM
 git clone --recursive https://github.com/Kei18/lacam3.git && cd lacam3
-cmake -B build && make -C build
+cmake -B build && cmake --build build -j 16
 cd ../../
 ```
 
@@ -48,7 +48,7 @@ This project includes C++ extensions and high-performance tools. To compile them
 
 ```bash
 # Make sure you are in the correct conda environment
-conda activate py39  # or your preferred Python environment
+conda activate py310  # or your preferred Python environment
 
 # Compile all C++ extensions and tools
 cd tools
