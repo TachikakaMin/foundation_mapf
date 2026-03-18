@@ -8,7 +8,7 @@
 
 ## 主要类
 
-### `MAPFOnlineDataset(map_files, feature_dim, feature_type, *, seed=1919180, time_limit_sec=5, verbose=0, retry_limit=64, agent_counts=(128, 96, 64, 32, 16))`
+### `MAPFOnlineDataset(map_files, feature_dim, feature_type, *, seed=1919180, time_limit_sec=2, verbose=0, retry_limit=64, agent_counts=(128, 96, 64, 32, 16))`
 
 这是一个 `torch.utils.data.IterableDataset`。
 
@@ -52,6 +52,12 @@
    - `mask`
    - `file_name`
 
+当前实现还会在每个 worker 内后台预取下一条 scenario。
+
+- 主线程负责消费当前轨迹的 step 样本
+- 后台线程提前调用下一次 LACAM 求解
+- 当当前轨迹消费完时，下一条轨迹通常已经准备好，从而减少 scenario 边界处的等待
+
 ## 主要辅助接口
 
 ### `_build_pair_configs(...)`
@@ -67,6 +73,10 @@
 调用 [tools/extensions/lacam_online_native.cpp](/home/yimin/research/RAILGUN/tools/extensions/lacam_online_native.cpp) 暴露的 `generate_lacam_solution_cpp(...)`。
 
 当前会兼容关键字调用和几种位置参数调用方式，并在 LACAM 无解时返回 `None` 进入重试。
+
+### `_submit_prefetch_task(...)`
+
+把一批带重试的 `(map, agent_num, seed)` 候选提交给 worker 内的后台线程，提前生成下一条 scenario。
 
 ### `_parse_solution_output(raw)`
 
@@ -122,7 +132,7 @@ dataset = MAPFOnlineDataset(
     map_files=["data/map_files/maze-32-32-10-1-75/maze-32-32-10-1-75-0.map"],
     feature_dim=6,
     feature_type="gradient",
-    time_limit_sec=5,
+    time_limit_sec=2,
 )
 sample = next(iter(dataset))
 ```

@@ -123,6 +123,30 @@
 
 按 `dataset_mode` 在 `train_offline()` 和 `train_online()` 之间分发。
 
+## TensorBoard 指标
+
+训练阶段同时记录 step 级指标和窗口/epoch 聚合指标，offline 和 online 共用同一套核心命名。
+
+- `Optimization/LR`：当前学习率
+- `Loss/TrainStep`：当前训练 step 的损失
+- `Loss/TrainStep_<H>x<W>`：当前训练 step 所属尺寸分组的损失
+- `Loss/Train`：online 下为每个训练 step 的损失；offline 下仍是每个 epoch 的平均训练损失
+- `Loss/Train_window_avg`：online 训练窗口平均损失
+- `Loss/Train_<H>x<W>`：窗口平均或 epoch 平均的尺寸分组训练损失
+- `Entropy/Train`：当前训练 step 的平均 entropy
+- `Entropy/Train_window_avg` / `Entropy/Train_epoch_avg`：聚合后的 entropy
+- `Time/DataFetch_s`：取 batch 的耗时
+- `Time/Step_s`：完整训练 step 的耗时
+- `Time/DataFetch_s_window_avg` / `Time/DataFetch_s_epoch_avg`：聚合后的取 batch 耗时
+- `Time/Step_s_window_avg` / `Time/Step_s_epoch_avg`：聚合后的 step 耗时
+- `GPU/memory_allocated_mb`：当前已分配显存
+- `GPU/memory_reserved_mb`：当前已保留显存
+- `GPU/max_memory_allocated_mb`：当前 step 期间峰值已分配显存
+- `GPU/max_memory_reserved_mb`：当前 step 期间峰值已保留显存
+- `Loss/Val` 和 `Loss/Val_<H>x<W>`：验证损失
+- `Inference/...` 和 `InferenceSummary/...`：inference test rollout 指标
+- `InferenceVideo/case_0`：第一个固定 inference 样本的 rollout 轨迹视频
+
 ## 主程序入口
 
 `if __name__ == "__main__":` 下的流程如下：
@@ -130,7 +154,7 @@
 1. 从 [train_args.py](/home/yimin/research/RAILGUN/train_args.py) 读取参数
    - 支持 `--config <yaml>` 先加载配置文件，再用 CLI 覆盖
 2. 根据 `--distributed` 决定是否初始化 `torch.distributed`
-3. 创建 TensorBoard `SummaryWriter`
+3. 创建带时间戳的运行目录，并在总训练步数 `>= 1000` 时启用 TensorBoard `SummaryWriter`
 4. 固定随机种子
 5. 根据 `--model` 初始化 [models/unet.py](/home/yimin/research/RAILGUN/models/unet.py) 或 [models/CNN.py](/home/yimin/research/RAILGUN/models/CNN.py)
 6. 始终构建离线固定验证集
@@ -165,12 +189,14 @@
 
 ### 输出
 
-- TensorBoard 日志：`args.log_dir/<timestamp>/`
+- 运行目录：`args.log_dir/<timestamp>/`
+- TensorBoard 日志：仅当总训练步数 `>= 1000` 时写入到 `args.log_dir/<timestamp>/`
 - 模型权重：
   - offline: `model_checkpoint_epoch_<N>.pth`
   - online: `model_checkpoint_step_<N>.pth`
 - 启动时的 `Runtime Config` 参数表
 - 训练中的 inference test 指标
+- TensorBoard 中的 `Args` 和 `RuntimeConfig` 文本参数快照
 
 ## 用法
 

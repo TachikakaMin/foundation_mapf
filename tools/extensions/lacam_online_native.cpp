@@ -42,7 +42,7 @@ static PyObject* generate_lacam_solution_cpp(PyObject* self, PyObject* args, PyO
     const char* map_file_cstr = nullptr;
     int agent_num = 0;
     int seed = 0;
-    int time_limit_sec = 5;
+    int time_limit_sec = 2;
     int verbose = 0;
 
     static const char* kwlist[] = {
@@ -85,13 +85,28 @@ static PyObject* generate_lacam_solution_cpp(PyObject* self, PyObject* args, PyO
         }
 
         const Deadline deadline(static_cast<double>(time_limit_sec) * 1000.0);
-        const Solution solution = solve(ins, verbose - 1, &deadline, seed);
+        Solution solution;
+        bool feasible = false;
+        PyThreadState* thread_state = nullptr;
+        try {
+            thread_state = PyEval_SaveThread();
+            solution = solve(ins, verbose - 1, &deadline, seed);
+            feasible = !solution.empty() && is_feasible_solution(ins, solution, 0);
+            PyEval_RestoreThread(thread_state);
+            thread_state = nullptr;
+        } catch (...) {
+            if (thread_state != nullptr) {
+                PyEval_RestoreThread(thread_state);
+                thread_state = nullptr;
+            }
+            throw;
+        }
 
         if (solution.empty()) {
             PyErr_SetString(PyExc_RuntimeError, "LACAM failed to find a solution");
             return nullptr;
         }
-        if (!is_feasible_solution(ins, solution, 0)) {
+        if (!feasible) {
             PyErr_SetString(PyExc_RuntimeError, "LACAM returned an infeasible solution");
             return nullptr;
         }

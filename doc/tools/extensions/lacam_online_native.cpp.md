@@ -8,7 +8,7 @@
 
 ## 主要接口
 
-### `generate_lacam_solution_cpp(map_file, agent_num, seed, time_limit_sec=5, verbose=0)`
+### `generate_lacam_solution_cpp(map_file, agent_num, seed, time_limit_sec=2, verbose=0)`
 
 这是暴露给 Python 的主函数。
 
@@ -55,6 +55,8 @@
    - 最终目标位置
 7. 返回 Python 字典
 
+为了配合 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py) 的后台预取，这个扩展在执行 `solve(...)` 和可行性检查时会主动释放 Python GIL。这样同一个 DataLoader worker 进程里的后台线程可以在主线程消费当前轨迹 step 样本时并行生成下一条 scenario。
+
 ## 接口情况
 
 ### 被谁调用
@@ -77,6 +79,6 @@ scenario = generate_lacam_solution_cpp(
     "data/map_files/maze-32-32-10-1-75/maze-32-32-10-1-75-0.map",
     16,
     123,
-    time_limit_sec=5,
+    time_limit_sec=2,
 )
 ```

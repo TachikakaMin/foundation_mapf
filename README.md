@@ -97,6 +97,8 @@ Current note:
 - `train.py` now supports direct YAML loading with `--config`
 - CLI arguments still override config values when you need a one-off change
 - [config.offline.yaml](/home/yimin/research/RAILGUN/config.offline.yaml) and [config.online.yaml](/home/yimin/research/RAILGUN/config.online.yaml) are the recommended training entry points
+- each run uses a timestamped run directory under `runs/`
+- TensorBoard writes `Args` and `RuntimeConfig` for each run, but auto-disables when total training steps are below `1000`
 
 ### Offline: From Data Prep to Training
 
@@ -300,7 +302,7 @@ python train.py \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
-  --online_time_limit_sec 5 \
+  --online_time_limit_sec 2 \
   --online_retry_limit 20 \
   --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --batch_size 64 \

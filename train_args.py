@@ -147,7 +147,7 @@ def get_args():
     parser.add_argument(
         "--online_time_limit_sec",
         type=int,
-        default=5,
+        default=2,
         help="time limit for each online scenario generation",
     )
     parser.add_argument(

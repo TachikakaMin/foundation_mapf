@@ -1,6 +1,7 @@
 import glob
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -46,7 +47,7 @@ class MAPFOnlineDataset(IterableDataset):
         feature_type: str,
         *,
         seed: int = 1919180,
-        time_limit_sec: int = 5,
+        time_limit_sec: int = 2,
         verbose: int = 0,
         retry_limit: int = 64,
         agent_counts: Sequence[int] = DEFAULT_AGENT_COUNTS,
@@ -107,72 +108,61 @@ class MAPFOnlineDataset(IterableDataset):
         buffered_pair = None
         buffered_seed = None
         step_idx = 0
+        prefetch_future = None
 
-        while True:
-            if buffered_positions is not None and step_idx < buffered_positions.shape[0]:
-                yield self._build_step_sample(
-                    pair=buffered_pair,
-                    scenario_seed=int(buffered_seed),
-                    positions=buffered_positions,
-                    actions=buffered_actions,
-                    goals=buffered_goals,
-                    step_idx=step_idx,
-                    map_cache=map_cache,
-                    distance_map_cache=distance_map_cache,
-                )
-                step_idx += 1
-                continue
-
-            # Need a new scenario.
-            buffered_positions = None
-            buffered_actions = None
-            buffered_goals = None
-            buffered_pair = None
-            buffered_seed = None
-            step_idx = 0
-
-            got_one = False
-            for _ in range(self.retry_limit):
-                pair_idx = int(rng.choice(len(self._pairs), p=self._pair_probs))
-                pair = self._pairs[pair_idx]
-
-                local_counter = int(pair_counters[pair_idx])
-                pair_counters[pair_idx] += 1
-
-                scenario_seed = self._make_worker_sharded_seed(
-                    base_seed=self.seed,
-                    pair_seed_base=int(self._pair_seed_bases[pair_idx]),
-                    pair_counter=local_counter,
-                    worker_id=worker_id,
-                    num_workers=num_workers,
-                )
-
-                raw = self._call_generator(
-                    map_file=pair.map_file,
-                    agent_num=pair.agent_num,
-                    scenario_seed=scenario_seed,
-                )
-                parsed = self._parse_solution_output(raw)
-                if parsed is None:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            while True:
+                if buffered_positions is not None and step_idx < buffered_positions.shape[0]:
+                    yield self._build_step_sample(
+                        pair=buffered_pair,
+                        scenario_seed=int(buffered_seed),
+                        positions=buffered_positions,
+                        actions=buffered_actions,
+                        goals=buffered_goals,
+                        step_idx=step_idx,
+                        map_cache=map_cache,
+                        distance_map_cache=distance_map_cache,
+                    )
+                    step_idx += 1
                     continue
 
-                positions, actions, goals = parsed
-                if positions.shape[0] == 0 or positions.shape[1] == 0:
-                    continue
+                buffered_positions = None
+                buffered_actions = None
+                buffered_goals = None
+                buffered_pair = None
+                buffered_seed = None
+                step_idx = 0
 
-                buffered_positions = positions
-                buffered_actions = actions
-                buffered_goals = goals
-                buffered_pair = pair
-                buffered_seed = scenario_seed
-                got_one = True
-                break
+                while buffered_positions is None:
+                    if prefetch_future is None:
+                        prefetch_future = self._submit_prefetch_task(
+                            executor=executor,
+                            rng=rng,
+                            pair_counters=pair_counters,
+                            worker_id=worker_id,
+                            num_workers=num_workers,
+                        )
 
-            if not got_one:
-                raise RuntimeError(
-                    f"Online dataset worker {worker_id} failed to generate a valid "
-                    f"scenario after {self.retry_limit} retries."
-                )
+                    prefetched = prefetch_future.result()
+                    prefetch_future = None
+                    if prefetched is None:
+                        continue
+
+                    (
+                        buffered_pair,
+                        buffered_seed,
+                        buffered_positions,
+                        buffered_actions,
+                        buffered_goals,
+                    ) = prefetched
+
+                    prefetch_future = self._submit_prefetch_task(
+                        executor=executor,
+                        rng=rng,
+                        pair_counters=pair_counters,
+                        worker_id=worker_id,
+                        num_workers=num_workers,
+                    )
 
     @staticmethod
     def _get_worker_context() -> Tuple[int, int]:
@@ -297,6 +287,69 @@ class MAPFOnlineDataset(IterableDataset):
         if last_type_error is not None:
             raise last_type_error
         return None
+
+    def _prepare_attempts(
+        self,
+        *,
+        rng: np.random.Generator,
+        pair_counters: np.ndarray,
+        worker_id: int,
+        num_workers: int,
+    ) -> List[Tuple[_PairConfig, int]]:
+        attempts: List[Tuple[_PairConfig, int]] = []
+        for _ in range(self.retry_limit):
+            pair_idx = int(rng.choice(len(self._pairs), p=self._pair_probs))
+            pair = self._pairs[pair_idx]
+
+            local_counter = int(pair_counters[pair_idx])
+            pair_counters[pair_idx] += 1
+
+            scenario_seed = self._make_worker_sharded_seed(
+                base_seed=self.seed,
+                pair_seed_base=int(self._pair_seed_bases[pair_idx]),
+                pair_counter=local_counter,
+                worker_id=worker_id,
+                num_workers=num_workers,
+            )
+            attempts.append((pair, scenario_seed))
+        return attempts
+
+    def _generate_scenario_from_attempts(
+        self,
+        attempts: Sequence[Tuple[_PairConfig, int]],
+    ):
+        for pair, scenario_seed in attempts:
+            raw = self._call_generator(
+                map_file=pair.map_file,
+                agent_num=pair.agent_num,
+                scenario_seed=scenario_seed,
+            )
+            parsed = self._parse_solution_output(raw)
+            if parsed is None:
+                continue
+
+            positions, actions, goals = parsed
+            if positions.shape[0] == 0 or positions.shape[1] == 0:
+                continue
+            return pair, scenario_seed, positions, actions, goals
+        return None
+
+    def _submit_prefetch_task(
+        self,
+        *,
+        executor: ThreadPoolExecutor,
+        rng: np.random.Generator,
+        pair_counters: np.ndarray,
+        worker_id: int,
+        num_workers: int,
+    ):
+        attempts = self._prepare_attempts(
+            rng=rng,
+            pair_counters=pair_counters,
+            worker_id=worker_id,
+            num_workers=num_workers,
+        )
+        return executor.submit(self._generate_scenario_from_attempts, attempts)
 
     def _parse_solution_output(self, raw):
         if raw is None:
