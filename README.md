@@ -117,6 +117,11 @@ Expected output:
 
 - maps under `data/map_files/...`
 
+Notes:
+
+- `gen_mapfile.sh` now runs parameter groups in parallel with a progress bar
+- you can override concurrency with `PARALLEL_JOBS=<N>`
+
 #### Step 3: Generate path files with LACAM
 
 ```bash

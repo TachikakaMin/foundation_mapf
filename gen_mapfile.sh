@@ -1,18 +1,52 @@
 #!/bin/bash
 
-height=32
-width=32
+set -euo pipefail
 
-# 创建输出目录
+if ! command -v parallel &> /dev/null; then
+    echo "错误: 需要安装 GNU parallel"
+    echo "安装命令: sudo apt-get install parallel"
+    exit 1
+fi
+
+if ! command -v bc &> /dev/null; then
+    echo "错误: 需要安装 bc"
+    echo "安装命令: sudo apt-get install bc"
+    exit 1
+fi
+
+HEIGHT="${HEIGHT:-32}"
+WIDTH="${WIDTH:-32}"
+DENSITY_START="${DENSITY_START:-0.1}"
+DENSITY_END="${DENSITY_END:-0.2}"
+DENSITY_STEP="${DENSITY_STEP:-0.1}"
+COMPONENT_START="${COMPONENT_START:-1}"
+COMPONENT_END="${COMPONENT_END:-10}"
+GO_STRAIGHT_START="${GO_STRAIGHT_START:-0.75}"
+GO_STRAIGHT_END="${GO_STRAIGHT_END:-0.85}"
+GO_STRAIGHT_STEP="${GO_STRAIGHT_STEP:-0.05}"
+CPU_CORES="$(nproc)"
+PARALLEL_JOBS="${PARALLEL_JOBS:-$CPU_CORES}"
+
 mkdir -p data/map_files/
 
-# generate map files
-for density in $(seq 0.1 0.1 0.2); do 
-    for component in $(seq 1 10); do
-        for go_straight in $(seq 0.75 0.05 0.85); do
+TASKS_FILE="$(mktemp)"
+trap 'rm -f "$TASKS_FILE"' EXIT
+
+for density in $(seq "$DENSITY_START" "$DENSITY_STEP" "$DENSITY_END"); do
+    for component in $(seq "$COMPONENT_START" "$COMPONENT_END"); do
+        for go_straight in $(seq "$GO_STRAIGHT_START" "$GO_STRAIGHT_STEP" "$GO_STRAIGHT_END"); do
             num_maps=$(printf "%.0f" "$(echo "12 + (${density} * 30) - (${component} * 2)" | bc)")
-            echo "Generating maps with density=$density, component=$component, go_straight=$go_straight, num_maps=$num_maps"
-            python data_generation_LACAM/maze_generator.py --num_maps $num_maps --width $((width-2)) --height $((height-2)) --obstacle_density $density --wall_components $component --go_straight $go_straight
+            printf "%s\t%s\t%s\t%s\n" "$density" "$component" "$go_straight" "$num_maps" >> "$TASKS_FILE"
         done
     done
 done
+
+TOTAL_TASKS="$(wc -l < "$TASKS_FILE" | tr -d ' ')"
+echo "共 $TOTAL_TASKS 组地图生成任务"
+echo "检测到 $CPU_CORES 个 CPU 核心, 设置并行任务数: $PARALLEL_JOBS"
+
+parallel --jobs "$PARALLEL_JOBS" --progress --bar --eta --colsep '\t' \
+    "python data_generation_LACAM/maze_generator.py --num_maps {4} --width $((WIDTH-2)) --height $((HEIGHT-2)) --obstacle_density {1} --wall_components {2} --go_straight {3}" \
+    :::: "$TASKS_FILE"
+
+echo "✅ 地图生成完成"
