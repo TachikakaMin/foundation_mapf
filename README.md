@@ -32,7 +32,7 @@ Multi-Agent Path Finding (MAPF), which focuses on finding collision-free paths f
 
 ## Installation
 ```bash
-pip install torch numpy tqdm tensorboard psutil matplotlib
+pip install torch numpy tqdm tensorboard psutil matplotlib pyyaml
 apt update -y
 apt install parallel -y
 brew install parallel
@@ -94,8 +94,9 @@ This repo now has two distinct training workflows:
 
 Current note:
 
-- `train.py` still starts from CLI arguments
-- [config.offline.yaml](/home/yimin/research/RAILGUN/config.offline.yaml) and [config.online.yaml](/home/yimin/research/RAILGUN/config.online.yaml) are readable templates; use them as the source of truth when assembling your training command
+- `train.py` now supports direct YAML loading with `--config`
+- CLI arguments still override config values when you need a one-off change
+- [config.offline.yaml](/home/yimin/research/RAILGUN/config.offline.yaml) and [config.online.yaml](/home/yimin/research/RAILGUN/config.online.yaml) are the recommended training entry points
 
 ### Offline: From Data Prep to Training
 
@@ -120,7 +121,8 @@ Expected output:
 Notes:
 
 - `gen_mapfile.sh` now runs parameter groups in parallel with a progress bar
-- you can override concurrency with `PARALLEL_JOBS=<N>`
+- by default it reserves `2` CPU cores and does not try to use the full machine
+- you can override concurrency with `PARALLEL_JOBS=<N>` or `RESERVED_CORES=<N>`
 
 #### Step 3: Generate path files with LACAM
 
@@ -131,6 +133,11 @@ bash gen_pathfile.sh
 Expected output:
 
 - path files under `data/path_files/...`
+
+Notes:
+
+- `gen_pathfile.sh` now also reserves `2` CPU cores by default
+- you can override concurrency with `PARALLEL_JOBS=<N>` or `RESERVED_CORES=<N>`
 
 #### Step 4: Convert `.path` to `.mbin` and precompute distance maps
 
@@ -167,6 +174,18 @@ Before training, make sure these exist:
 
 #### Step 6: Launch offline training
 
+Recommended: load the offline config directly.
+
+```bash
+python train.py --config config.offline.yaml
+```
+
+Override a small number of values from CLI when needed:
+
+```bash
+python train.py --config config.offline.yaml --batch_size 32 --epochs 50
+```
+
 Single GPU:
 
 ```bash
@@ -183,6 +202,7 @@ Multi-GPU:
 
 ```bash
 torchrun --nproc_per_node=8 train.py \
+  --config config.offline.yaml \
   --dataset_mode offline \
   --dataset_path data/input_data \
   --batch_size 8 \
@@ -258,8 +278,21 @@ Before training, make sure these exist:
 
 #### Step 6: Launch online training
 
+Recommended: load the online config directly.
+
+```bash
+python train.py --config config.online.yaml
+```
+
+Override a small number of values from CLI when needed:
+
+```bash
+python train.py --config config.online.yaml --batch_size 32 --online_total_steps 50000
+```
+
 ```bash
 python train.py \
+  --config config.online.yaml \
   --dataset_mode online \
   --train_map_path data/map_files \
   --val_dataset_path data/online_eval_input_data \
@@ -281,7 +314,7 @@ Online mode key idea:
 
 ### Where To Change Parameters
 
-训练参数统一定义在 `train_args.py`，训练入口在 `train.py`。推荐做法是直接在命令行传参；如果想改默认值，再改 `train_args.py`。
+训练参数统一定义在 `train_args.py`，训练入口在 `train.py`。推荐做法是直接修改对应的 YAML，然后用 `--config` 启动；命令行只用于临时覆盖。
 
 仓库根目录现在提供了两套默认模板：
 
@@ -289,6 +322,19 @@ Online mode key idea:
 - [config.online.yaml](/home/yimin/research/RAILGUN/config.online.yaml): 在线训练 / 离线验证
 
 [config.yaml](/home/yimin/research/RAILGUN/config.yaml) 目前保留为默认离线模板的兼容入口。
+
+直接启动方式：
+
+```bash
+python train.py --config config.offline.yaml
+python train.py --config config.online.yaml
+```
+
+配置加载规则：
+
+- `--config` 先提供默认值
+- CLI 再覆盖同名字段
+- 训练开始时 `Runtime Config` 会打印最终生效值和 `config_source`
 
 训练启动后，`train.py` 会打印一份 `Runtime Config` 表，里面会直接显示当前模型大小、数据模式、训练周期、验证周期和 inference test 配置。
 
@@ -337,6 +383,7 @@ Online mode key idea:
 
 ```bash
 python train.py \
+  --config config.online.yaml \
   --dataset_mode online \
   --train_map_path data/map_files \
   --val_dataset_path data/online_eval_input_data \

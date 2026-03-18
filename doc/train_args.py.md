@@ -13,6 +13,7 @@
 参数分为五类：
 
 - 日志与随机种子：
+  - `--config`
   - `--seed`
   - `--log_dir`
 - 数据集：
@@ -52,9 +53,21 @@
 ## 接口情况
 
 - 返回值直接传给 `train.py` 的主流程
+- 支持 `--config <yaml>` 先加载配置文件，再由 CLI 覆盖同名字段
 - 支持两种训练模式：
   - `offline`: 训练和验证都走离线 `.mbin`
   - `online`: 训练在线生成，验证仍使用离线 `.mbin`
+
+## 配置文件加载
+
+### `--config`
+
+从 YAML 文件加载训练参数。
+
+- 配置文件需要是顶层 key-value 映射
+- key 名应与命令行参数名一致，例如 `batch_size`、`dataset_mode`
+- 命令行参数优先级更高，会覆盖配置文件里的同名字段
+- 运行后的 `args.config_source` 会告诉 `train.py` 当前是纯配置还是“配置 + CLI 覆盖”
 
 ## 在线训练相关参数
 
@@ -134,18 +147,24 @@ print(args.batch_size)
 命令行通常不单独调用，而是通过训练入口使用：
 
 ```bash
+python train.py --config config.offline.yaml
+python train.py --config config.online.yaml
+
+# 配置文件 + 临时覆盖
+python train.py --config config.online.yaml --batch_size 32 --online_total_steps 50000
+
 python train.py --epochs 50 --batch_size 32 --model unet
 
 # 在线训练
 python train.py \
   --dataset_mode online \
   --train_map_path data/map_files \
-  --val_dataset_path data/input_data \
+  --val_dataset_path data/online_eval_input_data \
   --online_total_steps 200000 \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
-  --sample_data_path data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
+  --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --inference_num_cases 1 \
   --inference_action_choice max \
   --steps 100

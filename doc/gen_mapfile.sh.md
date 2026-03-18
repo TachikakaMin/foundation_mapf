@@ -8,6 +8,7 @@
 
 - GNU `parallel` 并行生成
 - `parallel --bar` 进度条
+- 默认预留部分 CPU 核心, 不把机器跑满
 - 通过环境变量覆盖并行度和参数范围
 
 ## 脚本流程
@@ -16,7 +17,8 @@
 2. 读取环境变量或默认值：
    - `HEIGHT=32`
    - `WIDTH=32`
-   - `PARALLEL_JOBS=$(nproc)`
+   - `RESERVED_CORES=2`
+   - `PARALLEL_JOBS=max(1, nproc - RESERVED_CORES)`
 3. 创建 `data/map_files/`
 4. 遍历：
    - `density`: `0.1 -> 0.2`
@@ -67,6 +69,7 @@
 - `GO_STRAIGHT_START`
 - `GO_STRAIGHT_END`
 - `GO_STRAIGHT_STEP`
+- `RESERVED_CORES`
 - `PARALLEL_JOBS`
 
 ## 用法
@@ -76,4 +79,7 @@ bash gen_mapfile.sh
 
 # 指定并行度
 PARALLEL_JOBS=8 bash gen_mapfile.sh
+
+# 保留更多核心给系统或其他任务
+RESERVED_CORES=4 bash gen_mapfile.sh
 ```

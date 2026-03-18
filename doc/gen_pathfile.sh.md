@@ -8,11 +8,12 @@
 
 1. 检查 `parallel` 和 `bc` 是否存在
 2. 检查 `data_generation_LACAM/lacam3/build/main` 是否已经编译
-3. 创建 `data/path_files/`
-4. 遍历 `data/map_files/maze-*/*.map`
-5. 针对每张地图计算不同智能体数量下应生成的轨迹数量
-6. 只对缺失的输出文件生成任务
-7. 把任务交给 GNU `parallel` 并行执行
+3. 读取 CPU 核心数并默认预留 `2` 个核心
+4. 创建 `data/path_files/`
+5. 遍历 `data/map_files/maze-*/*.map`
+6. 针对每张地图计算不同智能体数量下应生成的轨迹数量
+7. 只对缺失的输出文件生成任务
+8. 把任务交给 GNU `parallel` 并行执行
 
 ## 接口情况
 
@@ -22,6 +23,18 @@
 - `bc`
 - `nproc`
 - `data_generation_LACAM/lacam3/build/main`
+
+### 并行度策略
+
+默认行为：
+
+- `RESERVED_CORES=2`
+- `PARALLEL_JOBS=max(1, nproc - RESERVED_CORES)`
+
+可通过环境变量覆盖：
+
+- `RESERVED_CORES`
+- `PARALLEL_JOBS`
 
 ### 生成的输出
 
@@ -50,4 +63,10 @@ data_generation_LACAM/lacam3/build/main \
 
 ```bash
 bash gen_pathfile.sh
+
+# 指定并行度
+PARALLEL_JOBS=8 bash gen_pathfile.sh
+
+# 多留几个核心, 避免吃满整机 CPU
+RESERVED_CORES=4 bash gen_pathfile.sh
 ```

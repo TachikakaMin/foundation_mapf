@@ -256,7 +256,7 @@ def print_runtime_summary(
 
     total_params, model_memory_mb = get_model_stats(model)
     rows = [
-        ("config_source", "CLI -> train_args.py -> train.py"),
+        ("config_source", getattr(args, "config_source", "CLI only")),
         ("device", device),
         ("dataset_mode", args.dataset_mode),
         ("train_data", args.train_map_path if args.dataset_mode == "online" else args.dataset_path),

@@ -68,6 +68,7 @@
 
 表中包含：
 
+- 配置来源 `config_source`
 - 数据模式和数据路径
 - 训练 / 验证尺寸分组
 - 模型类型、参数量和模型大小
@@ -127,6 +128,7 @@
 `if __name__ == "__main__":` 下的流程如下：
 
 1. 从 [train_args.py](/home/yimin/research/RAILGUN/train_args.py) 读取参数
+   - 支持 `--config <yaml>` 先加载配置文件，再用 CLI 覆盖
 2. 根据 `--distributed` 决定是否初始化 `torch.distributed`
 3. 创建 TensorBoard `SummaryWriter`
 4. 固定随机种子
@@ -173,6 +175,13 @@
 ## 用法
 
 ```bash
+# 推荐：直接加载配置
+python train.py --config config.offline.yaml
+python train.py --config config.online.yaml
+
+# 配置 + CLI 覆盖
+python train.py --config config.online.yaml --batch_size 32 --online_total_steps 50000
+
 # 离线训练，单卡
 python train.py --batch_size 64
 
@@ -183,12 +192,12 @@ torchrun --nproc_per_node=8 train.py --batch_size 8 --distributed
 python train.py \
   --dataset_mode online \
   --train_map_path data/map_files \
-  --val_dataset_path data/input_data \
+  --val_dataset_path data/online_eval_input_data \
   --online_total_steps 200000 \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
-  --sample_data_path data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
+  --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --inference_num_cases 1 \
   --inference_action_choice max \
   --steps 100 \

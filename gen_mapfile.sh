@@ -25,7 +25,12 @@ GO_STRAIGHT_START="${GO_STRAIGHT_START:-0.75}"
 GO_STRAIGHT_END="${GO_STRAIGHT_END:-0.85}"
 GO_STRAIGHT_STEP="${GO_STRAIGHT_STEP:-0.05}"
 CPU_CORES="$(nproc)"
-PARALLEL_JOBS="${PARALLEL_JOBS:-$CPU_CORES}"
+RESERVED_CORES="${RESERVED_CORES:-2}"
+DEFAULT_PARALLEL_JOBS=$((CPU_CORES - RESERVED_CORES))
+if [ "$DEFAULT_PARALLEL_JOBS" -lt 1 ]; then
+    DEFAULT_PARALLEL_JOBS=1
+fi
+PARALLEL_JOBS="${PARALLEL_JOBS:-$DEFAULT_PARALLEL_JOBS}"
 
 mkdir -p data/map_files/
 
@@ -43,7 +48,7 @@ done
 
 TOTAL_TASKS="$(wc -l < "$TASKS_FILE" | tr -d ' ')"
 echo "共 $TOTAL_TASKS 组地图生成任务"
-echo "检测到 $CPU_CORES 个 CPU 核心, 设置并行任务数: $PARALLEL_JOBS"
+echo "检测到 $CPU_CORES 个 CPU 核心, 预留核心数: $RESERVED_CORES, 设置并行任务数: $PARALLEL_JOBS"
 
 parallel --jobs "$PARALLEL_JOBS" --progress --bar --eta --colsep '\t' \
     "python data_generation_LACAM/maze_generator.py --num_maps {4} --width $((WIDTH-2)) --height $((HEIGHT-2)) --obstacle_density {1} --wall_components {2} --go_straight {3}" \
