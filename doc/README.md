@@ -6,6 +6,7 @@
 - `tools/build.sh` -> `doc/tools/build.sh.md`
 - `MAPF_online_dataset.py` -> `doc/MAPF_online_dataset.py.md`
 - `tools/extensions/lacam_online_native.cpp` -> `doc/tools/extensions/lacam_online_native.cpp.md`
+- `gen_online_testset.sh` -> `doc/gen_online_testset.sh.md`
 
 每份文档都尽量覆盖这几类信息：
 
@@ -26,3 +27,4 @@
 - `doc/train_args.py.md`
 - `doc/MAPF_online_dataset.py.md`
 - `doc/tools/extensions/lacam_online_native.cpp.md`
+- `doc/gen_online_testset.sh.md`

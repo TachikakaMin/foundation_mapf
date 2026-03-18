@@ -9,7 +9,7 @@ log_dir: runs  # TensorBoard 和日志输出目录。TensorBoard and log output 
 dataset_mode: online  # 数据模式，应保持为 online。Dataset mode; should stay as online.
 train_map_path: data/map_files  # 在线训练扫描地图的根目录。Root directory of maps used for online training.
 dataset_path: data/input_data  # 离线训练数据根目录，这里主要保留给验证和样例路径回退使用。Offline dataset root, mainly kept for validation and sample-path fallback.
-val_dataset_path: data/input_data  # 固定离线验证集根目录。Root directory of the fixed offline validation set.
+val_dataset_path: data/online_eval_input_data  # 固定离线验证集根目录。Root directory of the fixed offline validation set.
 online_total_steps: 100000  # 在线训练总优化步数。Total optimizer steps for online training.
 online_eval_interval_steps: 2000  # 在线训练每隔多少步做一次验证。Run validation every N optimizer steps in online mode.
 online_save_interval_steps: 2000  # 在线训练每隔多少步保存一次 checkpoint。Save a checkpoint every N optimizer steps in online mode.
@@ -17,7 +17,7 @@ online_inference_test_interval_steps: 2000  # 在线训练每隔多少步做一�
 online_time_limit_sec: 5  # 单次在线生成场景的 LACAM 时间上限，单位秒。Time limit in seconds for one online LACAM scenario generation.
 online_retry_limit: 20  # 单个 worker 在线生成失败后的最大重试次数。Maximum retries for one worker when online generation fails.
 sample_data_path:  # 训练中 inference test 使用的固定离线 .mbin 样本列表。Fixed offline .mbin samples used by inference test during training.
-  - data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin
+  - data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin
 inference_num_cases: 1  # 每次 inference test 运行的固定样本数量。Number of fixed sample cases evaluated in each inference test.
 inference_action_choice: max  # inference rollout 的动作选择策略，max 更稳定，sample 更随机。Action selection strategy for inference rollout; max is more stable while sample is more stochastic.
 num_workers: 2  # DataLoader worker 数。Number of DataLoader workers.

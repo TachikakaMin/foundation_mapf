@@ -110,23 +110,7 @@ cd ..
 #### Step 2: Generate maps
 
 ```bash
-height=32
-width=32
-
-for density in $(seq 0.1 0.1 0.6); do
-  for component in {1..10}; do
-    for go_straight in $(seq 0.75 0.05 0.85); do
-      num_maps=$(printf "%.0f" "$(echo "12 + (${density} * 30) - (${component} * 2)" | bc)")
-      python data_generation_LACAM/maze_generator.py \
-        --num_maps $num_maps \
-        --width $((width-2)) \
-        --height $((height-2)) \
-        --obstacle_density $density \
-        --wall_components $component \
-        --go_straight $go_straight
-    done
-  done
-done
+bash gen_mapfile.sh
 ```
 
 Expected output:
@@ -136,32 +120,7 @@ Expected output:
 #### Step 3: Generate path files with LACAM
 
 ```bash
-for map_file in data/map_files/maze-*/*.map; do
-  map_pattern=$(basename "$(dirname "$map_file")")
-  map_name=$(basename "$map_file" .map)
-  density=$(echo "$map_name" | awk -F'-' '{print $4}')
-
-  for N in 128 96 64 32 16; do
-    case $N in
-      128) num_paths=$(echo "60 + $density * 2" | bc) ;;
-      96) num_paths=$(echo "40 + $density * 1" | bc) ;;
-      64) num_paths=$(echo "20 + $density * 0.8" | bc) ;;
-      32) num_paths=$(echo "5 + $density * 0.1" | bc) ;;
-      16) num_paths=$(echo "2 + $density * 0.1" | bc) ;;
-    esac
-
-    num_paths=$(printf "%.0f" "$num_paths")
-    mkdir -p "data/path_files/${map_pattern}/${map_name}-${N}"
-
-    for seed in $(seq 1 ${num_paths}); do
-      output_file="data/path_files/${map_pattern}/${map_name}-${N}/${map_name}-${N}-${seed}.path"
-      if [ ! -f "$output_file" ]; then
-        echo "$map_pattern $map_name $N $seed"
-      fi
-    done
-  done
-done | parallel --progress --bar --eta --timeout 10 --colsep ' ' \
-  'data_generation_LACAM/lacam3/build/main -m data/map_files/{1}/{2}.map -N {3} -s {4} -v 1 -o data/path_files/{1}/{2}-{3}/{2}-{3}-{4}.path'
+bash gen_pathfile.sh
 ```
 
 Expected output:
@@ -227,7 +186,7 @@ torchrun --nproc_per_node=8 train.py \
 
 ### Online: From Data Prep to Training
 
-Online mode does not require pre-generated training `.mbin`, but it still requires maps, distance maps, and a fixed offline validation set.
+Online mode does not require pre-generated training `.mbin`, but it still requires maps, distance maps, and a small fixed offline validation / test set.
 
 #### Step 1: Build C++ tools and extensions
 
@@ -239,7 +198,13 @@ cd ..
 
 #### Step 2: Generate maps
 
-Use the same map generation step as offline mode. The result must be written to `data/map_files/...`.
+Use the same map generation step as offline mode:
+
+```bash
+bash gen_mapfile.sh
+```
+
+The result must be written to `data/map_files/...`.
 
 #### Step 3: Precompute distance maps for those maps
 
@@ -251,21 +216,32 @@ Expected output:
 
 - distance maps under `data/distance_maps/...`
 
-#### Step 4: Prepare a fixed offline validation set
+#### Step 4: Generate a small fixed validation / test set
 
-Online training still validates on offline `.mbin`, so you need a validation dataset prepared in advance.
+Online training still validates on offline `.mbin`, but you do not need the full offline dataset. Use the dedicated script below to build a much smaller fixed set from a subset of existing maps:
 
-Minimal path:
+```bash
+bash gen_online_testset.sh
+```
 
-1. Generate maps
-2. Generate LACAM `.path`
-3. Convert `.path` to `.mbin`
+By default this script will:
 
-You can reuse the same commands from the offline workflow, but you only need enough `.mbin` for validation, not for online training itself.
+- select a small subset of maps from `data/map_files`
+- precompute distance maps only for those selected maps if needed
+- generate a small number of `.path` files
+- convert them into `.mbin`
+- write the result to `data/online_eval_input_data`
+
+Useful overrides:
+
+```bash
+MAX_MAPS_TOTAL=8 SEEDS_PER_AGENT=1 bash gen_online_testset.sh
+MAX_MAPS_TOTAL=16 AGENT_COUNTS="64 32 16" SEEDS_PER_AGENT=2 bash gen_online_testset.sh
+```
 
 Expected output:
 
-- validation `.mbin` under `data/input_data/...` or another directory passed via `--val_dataset_path`
+- validation `.mbin` under `data/online_eval_input_data/...` by default
 
 #### Step 5: Check required online directories
 
@@ -273,7 +249,7 @@ Before training, make sure these exist:
 
 - `data/map_files`
 - `data/distance_maps`
-- `data/input_data` or your custom validation root
+- `data/online_eval_input_data` or your custom validation root
 
 #### Step 6: Launch online training
 
@@ -281,13 +257,14 @@ Before training, make sure these exist:
 python train.py \
   --dataset_mode online \
   --train_map_path data/map_files \
-  --val_dataset_path data/input_data \
+  --val_dataset_path data/online_eval_input_data \
   --online_total_steps 200000 \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
   --online_time_limit_sec 5 \
   --online_retry_limit 20 \
+  --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --batch_size 64 \
   --num_workers 2
 ```
@@ -357,10 +334,10 @@ Online mode key idea:
 python train.py \
   --dataset_mode online \
   --train_map_path data/map_files \
-  --val_dataset_path data/input_data \
+  --val_dataset_path data/online_eval_input_data \
   --online_total_steps 200000 \
   --online_inference_test_interval_steps 4000 \
-  --sample_data_path data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
+  --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --inference_num_cases 1 \
   --inference_action_choice max \
   --steps 100
