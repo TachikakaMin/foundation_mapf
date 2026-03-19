@@ -73,13 +73,13 @@ def construct_input_feature(
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
-                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
+                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
                 if ((agent_locations == up_position).all(dim=1)).any():
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
-                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
+                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
                 if ((agent_locations == down_position).all(dim=1)).any():
                     down_distances = NOT_FOUND_PATH
@@ -143,13 +143,13 @@ def construct_input_feature(
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
-                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
+                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
                 if ((agent_locations == up_position).all(dim=1)).any():
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
-                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
+                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
                 if ((agent_locations == down_position).all(dim=1)).any():
                     down_distances = NOT_FOUND_PATH

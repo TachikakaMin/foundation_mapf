@@ -1,6 +1,10 @@
 import glob
 import math
+import multiprocessing as mp
 import os
+import queue
+import threading
+import atexit
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -51,6 +55,9 @@ class MAPFOnlineDataset(IterableDataset):
         verbose: int = 0,
         retry_limit: int = 64,
         agent_counts: Sequence[int] = DEFAULT_AGENT_COUNTS,
+        buffer_size: int = 0,
+        buffer_workers: int = 2,
+        buffer_timeout_sec: float = 1.0,
     ):
         super().__init__()
         self.feature_dim = int(feature_dim)
@@ -60,6 +67,9 @@ class MAPFOnlineDataset(IterableDataset):
         self.verbose = int(verbose)
         self.retry_limit = int(retry_limit)
         self.agent_counts = tuple(int(v) for v in agent_counts)
+        self.buffer_size = int(buffer_size)
+        self.buffer_workers = int(buffer_workers)
+        self.buffer_timeout_sec = float(buffer_timeout_sec)
 
         if map_files is None:
             discovered = sorted(glob.glob("data/map_files/maze-*/*.map"))
@@ -73,6 +83,14 @@ class MAPFOnlineDataset(IterableDataset):
             raise ValueError("retry_limit must be > 0.")
         if not self.agent_counts:
             raise ValueError("agent_counts cannot be empty.")
+        if self.buffer_size < 0:
+            raise ValueError("buffer_size must be >= 0.")
+        if self.buffer_workers < 0:
+            raise ValueError("buffer_workers must be >= 0.")
+        if self.buffer_size > 0 and self.buffer_workers <= 0:
+            raise ValueError("buffer_workers must be > 0 when buffer_size > 0.")
+        if self.buffer_size > 0 and self.buffer_timeout_sec <= 0:
+            raise ValueError("buffer_timeout_sec must be > 0 when buffer_size > 0.")
 
         self._pairs = self._build_pair_configs(self.map_files, self.agent_counts)
         if not self._pairs:
@@ -92,6 +110,12 @@ class MAPFOnlineDataset(IterableDataset):
 
     def __iter__(self):
         worker_id, num_workers = self._get_worker_context()
+        if self.buffer_size > 0 and self.buffer_workers > 0:
+            yield from self._iter_buffered(worker_id, num_workers)
+            return
+        yield from self._iter_simple(worker_id, num_workers)
+
+    def _iter_simple(self, worker_id: int, num_workers: int):
         worker_seed = self.seed + worker_id * 7_919
         rng = np.random.default_rng(worker_seed)
 
@@ -163,6 +187,82 @@ class MAPFOnlineDataset(IterableDataset):
                         worker_id=worker_id,
                         num_workers=num_workers,
                     )
+
+    def _iter_buffered(self, worker_id: int, num_workers: int):
+        worker_seed = self.seed + worker_id * 7_919
+        pair_counters = np.zeros(len(self._pairs), dtype=np.int64)
+        pair_lock = threading.Lock()
+
+        map_cache: Dict[str, np.ndarray] = {}
+        distance_map_cache: Dict[str, object] = {}
+
+        scenario_queue: "queue.Queue[object]" = queue.Queue(maxsize=self.buffer_size)
+        stop_event = threading.Event()
+        error_holder: Dict[str, Optional[BaseException]] = {"exc": None}
+
+        def producer_loop(producer_id: int):
+            local_rng = np.random.default_rng(worker_seed + 104_729 * (producer_id + 1))
+            while not stop_event.is_set():
+                try:
+                    attempts = self._prepare_attempts_threadsafe(
+                        rng=local_rng,
+                        pair_counters=pair_counters,
+                        worker_id=worker_id,
+                        num_workers=num_workers,
+                        lock=pair_lock,
+                    )
+                    scenario = self._generate_scenario_from_attempts(attempts)
+                    if scenario is None:
+                        continue
+                    while not stop_event.is_set():
+                        try:
+                            scenario_queue.put(scenario, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
+                except Exception as exc:
+                    error_holder["exc"] = exc
+                    stop_event.set()
+                    try:
+                        scenario_queue.put(exc, timeout=0.1)
+                    except queue.Full:
+                        pass
+                    break
+
+        threads: List[threading.Thread] = []
+        for idx in range(self.buffer_workers):
+            thread = threading.Thread(target=producer_loop, args=(idx,), daemon=True)
+            thread.start()
+            threads.append(thread)
+
+        try:
+            while True:
+                try:
+                    item = scenario_queue.get(timeout=self.buffer_timeout_sec)
+                except queue.Empty:
+                    if error_holder["exc"] is not None:
+                        raise error_holder["exc"]
+                    if stop_event.is_set():
+                        raise RuntimeError("Online buffer stopped unexpectedly.")
+                    continue
+                if isinstance(item, Exception):
+                    raise item
+                pair, scenario_seed, positions, actions, goals = item
+                for step_idx in range(positions.shape[0]):
+                    yield self._build_step_sample(
+                        pair=pair,
+                        scenario_seed=int(scenario_seed),
+                        positions=positions,
+                        actions=actions,
+                        goals=goals,
+                        step_idx=step_idx,
+                        map_cache=map_cache,
+                        distance_map_cache=distance_map_cache,
+                    )
+        finally:
+            stop_event.set()
+            for thread in threads:
+                thread.join(timeout=0.2)
 
     @staticmethod
     def _get_worker_context() -> Tuple[int, int]:
@@ -303,6 +403,33 @@ class MAPFOnlineDataset(IterableDataset):
 
             local_counter = int(pair_counters[pair_idx])
             pair_counters[pair_idx] += 1
+
+            scenario_seed = self._make_worker_sharded_seed(
+                base_seed=self.seed,
+                pair_seed_base=int(self._pair_seed_bases[pair_idx]),
+                pair_counter=local_counter,
+                worker_id=worker_id,
+                num_workers=num_workers,
+            )
+            attempts.append((pair, scenario_seed))
+        return attempts
+
+    def _prepare_attempts_threadsafe(
+        self,
+        *,
+        rng: np.random.Generator,
+        pair_counters: np.ndarray,
+        worker_id: int,
+        num_workers: int,
+        lock: threading.Lock,
+    ) -> List[Tuple[_PairConfig, int]]:
+        attempts: List[Tuple[_PairConfig, int]] = []
+        for _ in range(self.retry_limit):
+            with lock:
+                pair_idx = int(rng.choice(len(self._pairs), p=self._pair_probs))
+                pair = self._pairs[pair_idx]
+                local_counter = int(pair_counters[pair_idx])
+                pair_counters[pair_idx] += 1
 
             scenario_seed = self._make_worker_sharded_seed(
                 base_seed=self.seed,
@@ -559,6 +686,372 @@ class MAPFOnlineDataset(IterableDataset):
         return {
             "feature": input_features,
             "action": output_features,
+            "mask": mask,
+            "file_name": file_name,
+        }
+
+
+def _scenario_producer_process(
+    worker_idx: int,
+    pairs: Sequence[_PairConfig],
+    pair_probs: np.ndarray,
+    pair_seed_bases: np.ndarray,
+    base_seed: int,
+    time_limit_sec: int,
+    verbose: int,
+    retry_limit: int,
+    scenario_queue: mp.Queue,
+    stop_event,
+    seed_counter,
+    seed_counter_lock,
+):
+    """独立进程：只做 LACAM 求解，把 raw scenario 数据发回主进程。
+    Standalone process: runs LACAM only, sends raw scenario data back to main process."""
+    # 每个进程独立 import，避免 fork 后共享状态问题
+    # Each process imports independently to avoid shared-state issues after fork
+    from tools.extensions import generate_lacam_solution_cpp as _gen_lacam
+
+    rng = np.random.default_rng(base_seed + (worker_idx + 1) * 104_729)
+
+    def _normalize_seed(raw: int) -> int:
+        s = int(raw) % INT32_MAX
+        return s if s != 0 else 1
+
+    def _next_seed() -> int:
+        with seed_counter_lock:
+            counter = seed_counter.value
+            seed_counter.value += 1
+        return _normalize_seed(base_seed + (worker_idx + 1) * 10_000_019 + counter)
+
+    def _call_generator(map_file: str, agent_num: int, scenario_seed: int):
+        call_variants = (
+            lambda: _gen_lacam(
+                map_file=map_file, agent_num=int(agent_num),
+                seed=int(scenario_seed), time_limit_sec=int(time_limit_sec),
+                verbose=int(verbose),
+            ),
+            lambda: _gen_lacam(
+                map_file, int(agent_num), int(scenario_seed),
+                int(time_limit_sec), int(verbose),
+            ),
+            lambda: _gen_lacam(
+                map_file, int(agent_num), int(scenario_seed), int(time_limit_sec),
+            ),
+            lambda: _gen_lacam(map_file, int(agent_num), int(scenario_seed)),
+        )
+        last_type_error = None
+        for call in call_variants:
+            try:
+                return call()
+            except TypeError as exc:
+                last_type_error = exc
+                continue
+            except RuntimeError:
+                return None
+        if last_type_error is not None:
+            raise last_type_error
+        return None
+
+    def _parse_raw(raw):
+        """轻量解析，只提取 positions/actions/goals 的 numpy 数组。"""
+        if raw is None:
+            return None
+        if isinstance(raw, dict):
+            success = raw.get("success", raw.get("ok", True))
+            if not success:
+                return None
+            positions = None
+            for key in ("positions", "agent_positions", "agent_locations",
+                        "paths", "trajectory", "solution"):
+                if key in raw:
+                    positions = raw[key]
+                    break
+            actions = None
+            for key in ("actions", "agent_actions", "action"):
+                if key in raw:
+                    actions = raw[key]
+                    break
+            goals = raw.get("goals", None)
+            return positions, actions, goals
+        if isinstance(raw, (tuple, list)):
+            if len(raw) == 0:
+                return None
+            if len(raw) >= 3 and isinstance(raw[0], (bool, np.bool_)):
+                if not bool(raw[0]):
+                    return None
+                return raw[1], raw[2], raw[3] if len(raw) >= 4 else None
+            if len(raw) >= 2:
+                return raw[0], raw[1], raw[2] if len(raw) >= 3 else None
+            return raw[0], None, None
+        return raw, None, None
+
+    try:
+        while not stop_event.is_set():
+            for _ in range(retry_limit):
+                pair_idx = int(rng.choice(len(pairs), p=pair_probs))
+                pair = pairs[pair_idx]
+                scenario_seed = _next_seed()
+                raw = _call_generator(pair.map_file, pair.agent_num, scenario_seed)
+                parsed = _parse_raw(raw)
+                if parsed is None:
+                    continue
+                pos_raw, act_raw, goal_raw = parsed
+                if pos_raw is None:
+                    continue
+                # 发送轻量数据：pair index + seed + raw numpy 数组
+                # Send lightweight data: pair index + seed + raw numpy arrays
+                try:
+                    scenario_queue.put(
+                        (pair_idx, scenario_seed, pos_raw, act_raw, goal_raw),
+                        timeout=0.2,
+                    )
+                except Exception:
+                    if stop_event.is_set():
+                        return
+                    continue
+                break
+    except BaseException:
+        pass
+
+
+class MAPFOnlineBufferLoader:
+    """
+    Global step-buffer loader for online MAPF training.
+
+    使用多进程做 LACAM 求解（重活，释放 GIL 无效因为 Python 层开销），
+    主进程单线程做 feature construction（轻活，~6ms/scenario）。
+    Uses multiprocessing for LACAM solving (heavy work),
+    main process does feature construction (lightweight, ~6ms/scenario).
+    """
+
+    def __init__(
+        self,
+        map_files: Optional[Sequence[str]],
+        feature_dim: int,
+        feature_type: str,
+        *,
+        batch_size: int,
+        seed: int = 1919180,
+        time_limit_sec: int = 2,
+        verbose: int = 0,
+        retry_limit: int = 64,
+        agent_counts: Sequence[int] = MAPFOnlineDataset.DEFAULT_AGENT_COUNTS,
+        buffer_size: int = 1024,
+        buffer_workers: int = 4,
+        buffer_timeout_sec: float = 1.0,
+    ):
+        self.batch_size = int(batch_size)
+        self.buffer_size = int(buffer_size)
+        self.buffer_workers = int(buffer_workers)
+        self.buffer_timeout_sec = float(buffer_timeout_sec)
+
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be > 0.")
+        if self.buffer_size < self.batch_size:
+            raise ValueError("buffer_size must be >= batch_size for step buffering.")
+        if self.buffer_workers <= 0:
+            raise ValueError("buffer_workers must be > 0.")
+        if self.buffer_timeout_sec <= 0:
+            raise ValueError("buffer_timeout_sec must be > 0.")
+
+        self._dataset = MAPFOnlineDataset(
+            map_files,
+            feature_dim,
+            feature_type,
+            seed=seed,
+            time_limit_sec=time_limit_sec,
+            verbose=verbose,
+            retry_limit=retry_limit,
+            agent_counts=agent_counts,
+            buffer_size=0,
+            buffer_workers=0,
+            buffer_timeout_sec=buffer_timeout_sec,
+        )
+
+        # 进程间共享的 scenario queue（LACAM 结果）和 step queue（最终样本）
+        # Shared scenario queue (LACAM results) and step queue (final samples)
+        self._scenario_queue: mp.Queue = mp.Queue(maxsize=self.buffer_workers * 4)
+        self._step_queue: "queue.Queue[dict]" = queue.Queue(maxsize=self.buffer_size)
+        self._stop_event = mp.Event()
+        self._seed_counter = mp.Value("i", 0)
+        self._seed_counter_lock = mp.Lock()
+        self._processes: List[mp.Process] = []
+        self._builder_thread: Optional[threading.Thread] = None
+        self._started = False
+        self._start_lock = threading.Lock()
+        self._error: Optional[BaseException] = None
+        self._error_lock = threading.Lock()
+        atexit.register(self.close)
+
+    @property
+    def pair_configs(self) -> Sequence[_PairConfig]:
+        return self._dataset._pairs
+
+    def start(self):
+        with self._start_lock:
+            if self._started:
+                return
+            self._started = True
+
+            pairs = list(self._dataset._pairs)
+            pair_probs = self._dataset._pair_probs.copy()
+            pair_seed_bases = self._dataset._pair_seed_bases.copy()
+
+            for worker_idx in range(self.buffer_workers):
+                p = mp.Process(
+                    target=_scenario_producer_process,
+                    args=(
+                        worker_idx,
+                        pairs,
+                        pair_probs,
+                        pair_seed_bases,
+                        self._dataset.seed,
+                        self._dataset.time_limit_sec,
+                        self._dataset.verbose,
+                        self._dataset.retry_limit,
+                        self._scenario_queue,
+                        self._stop_event,
+                        self._seed_counter,
+                        self._seed_counter_lock,
+                    ),
+                    daemon=True,
+                )
+                p.start()
+                self._processes.append(p)
+
+            # 主进程的 builder 线程：从 scenario_queue 取 raw 数据，做 feature construction，放入 step_queue
+            # Builder thread in main process: takes raw data from scenario_queue,
+            # does feature construction, pushes to step_queue
+            self._builder_thread = threading.Thread(
+                target=self._builder_loop, daemon=True,
+            )
+            self._builder_thread.start()
+
+    def close(self):
+        if not self._started:
+            return
+        self._started = False  # 防止 atexit 重复调用 / prevent atexit double-call
+
+        self._stop_event.set()
+
+        # 禁止 mp.Queue 析构时 join feeder 线程（必须在 kill 之前调用）
+        # Must call before kill — after kill the queue's internal state is corrupted
+        self._scenario_queue.cancel_join_thread()
+
+        # 杀掉所有 producer 进程
+        # Kill all producer processes — they may be stuck in pipe write
+        for p in self._processes:
+            if p.is_alive():
+                p.kill()
+        for p in self._processes:
+            p.join(timeout=2.0)
+
+        # kill 后不能再碰 scenario_queue（内部 pipe 状态已损坏）
+        # Do NOT touch scenario_queue after kill (internal pipe is corrupted)
+
+        # 排空 step_queue 让 builder 线程从 put 阻塞中退出
+        # Drain step_queue to unblock builder thread stuck on put
+        while not self._step_queue.empty():
+            try:
+                self._step_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        if self._builder_thread is not None:
+            self._builder_thread.join(timeout=2.0)
+
+    def __iter__(self):
+        self.start()
+        while True:
+            batch_samples = []
+            while len(batch_samples) < self.batch_size:
+                sample = self._get_next_step_sample()
+                batch_samples.append(sample)
+            yield self._collate_step_samples(batch_samples)
+
+    def _set_error(self, exc: BaseException):
+        with self._error_lock:
+            if self._error is None:
+                self._error = exc
+        self._stop_event.set()
+
+    def _raise_if_error(self):
+        with self._error_lock:
+            if self._error is not None:
+                raise RuntimeError("Online step buffer producer failed.") from self._error
+
+    def _get_next_step_sample(self):
+        while not self._stop_event.is_set():
+            self._raise_if_error()
+            try:
+                return self._step_queue.get(timeout=self.buffer_timeout_sec)
+            except queue.Empty:
+                continue
+        self._raise_if_error()
+        raise RuntimeError("Online step buffer stopped unexpectedly.")
+
+    def _builder_loop(self):
+        """主进程线程：从 scenario_queue 消费 raw scenario，做 normalize + feature construction，推入 step_queue。
+        Main-process thread: consumes raw scenarios, does normalize + feature construction, pushes to step_queue."""
+        map_cache: Dict[str, np.ndarray] = {}
+        distance_map_cache: Dict[str, object] = {}
+        pairs = self._dataset._pairs
+
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    item = self._scenario_queue.get(timeout=self.buffer_timeout_sec)
+                except Exception:
+                    continue
+
+                pair_idx, scenario_seed, pos_raw, act_raw, goal_raw = item
+                pair = pairs[pair_idx]
+
+                # normalize（复用 dataset 的逻辑）
+                parsed = self._dataset._normalize_solution_arrays(
+                    pos_raw, act_raw, goal_raw,
+                    expected_steps=None, expected_agent_num=None,
+                )
+                if parsed is None:
+                    continue
+                positions, actions, goals = parsed
+                if positions.shape[0] == 0 or positions.shape[1] == 0:
+                    continue
+
+                # 批量构建所有 step 的训练样本
+                # Build all step samples for this scenario
+                samples = [
+                    self._dataset._build_step_sample(
+                        pair=pair,
+                        scenario_seed=int(scenario_seed),
+                        positions=positions,
+                        actions=actions,
+                        goals=goals,
+                        step_idx=step_idx,
+                        map_cache=map_cache,
+                        distance_map_cache=distance_map_cache,
+                    )
+                    for step_idx in range(positions.shape[0])
+                ]
+                for sample in samples:
+                    while not self._stop_event.is_set():
+                        try:
+                            self._step_queue.put(sample, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
+        except BaseException as exc:
+            self._set_error(exc)
+
+    @staticmethod
+    def _collate_step_samples(samples: Sequence[dict]):
+        feature = torch.stack([sample["feature"] for sample in samples], dim=0)
+        action = torch.stack([sample["action"] for sample in samples], dim=0)
+        mask = torch.stack([sample["mask"] for sample in samples], dim=0)
+        file_name = [sample["file_name"] for sample in samples]
+        return {
+            "feature": feature,
+            "action": action,
             "mask": mask,
             "file_name": file_name,
         }

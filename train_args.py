@@ -157,6 +157,18 @@ def get_args():
         help="max retries for online scenario generation",
     )
     parser.add_argument(
+        "--online_buffer_size",
+        type=int,
+        default=512,
+        help="global online step-buffer size per map-size group",
+    )
+    parser.add_argument(
+        "--online_buffer_timeout_sec",
+        type=float,
+        default=1.0,
+        help="queue wait timeout (seconds) for the online step buffer consumer",
+    )
+    parser.add_argument(
         "--sample_data_path",
         "-sp",
         type=str,
@@ -185,7 +197,11 @@ def get_args():
         help="action selection used during inference test rollout",
     )
     parser.add_argument(
-        "--num_workers", "-nw", type=int, default=20, help="number of workers"
+        "--num_workers",
+        "-nw",
+        type=int,
+        default=20,
+        help="offline: DataLoader workers; online: step-buffer producer threads and eval/sample DataLoader workers",
     )
     # training
     parser.add_argument(
@@ -221,6 +237,7 @@ def get_args():
     parser.add_argument("--model", "-m", type=str, default="unet", help="Model type")
     _add_bool_argument(parser, "--bilinear", False, "Use bilinear upsampling")
     parser.add_argument("--first_layer_channels", "-flc", type=int, default=64, help="First layer channels")
+    parser.add_argument("--blocks_per_stage", type=int, default=1, help="ResBlocks per UNet stage (0=legacy DoubleConv)")
     # 添加分布式训练参数
     _add_bool_argument(parser, "--distributed", False, "Enable distributed training")
     parser.add_argument("--model_path", type=str, default=None, help="Path to the model file")

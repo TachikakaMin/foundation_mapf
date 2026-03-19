@@ -1,6 +1,7 @@
 import torch
 from models.unet import UNet
-from MAPF_dataset import MAPFDataset
+from MAPF_dataset import MAPFDataset as MAPFDatasetBin
+from MAPF_dataset_mbin import MAPFDataset as MAPFDatasetMbin
 from torch.utils.data import DataLoader
 from tools.path_formation import path_formation
 from tools.visualize_path import visualize_path
@@ -56,6 +57,12 @@ def main():
         default=False,
         help="Lifelong learning",
     )
+    parser.add_argument(
+        "--blocks_per_stage",
+        type=int,
+        default=1,
+        help="ResBlocks per UNet stage (0=legacy DoubleConv)",
+    )
     args = parser.parse_args()
 
     # 设置随机种子以确保可重复性
@@ -68,7 +75,7 @@ def main():
 
     # 初始化模型
     model = UNet(
-        n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear
+        n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear, blocks_per_stage=args.blocks_per_stage
     ).to(device)
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -79,12 +86,16 @@ def main():
     # 加载模型权重
     model.load_state_dict(torch.load(args.model_path, map_location=device))
     model.eval()
-    if not args.dataset_paths[0].endswith(".bin"):
-        input_files = glob.glob(os.path.join(args.dataset_paths[0], "**/*-0.bin"), recursive=True)
-    else:
+    first_path = args.dataset_paths[0]
+    if first_path.endswith(".mbin"):
         input_files = args.dataset_paths
-    # 准备验证数据集
-    test_dataset = MAPFDataset(input_files, args.feature_dim, args.feature_type, first_step=True)
+        test_dataset = MAPFDatasetMbin(input_files, args.feature_dim, args.feature_type, first_step=True)
+    elif first_path.endswith(".bin"):
+        input_files = args.dataset_paths
+        test_dataset = MAPFDatasetBin(input_files, args.feature_dim, args.feature_type, first_step=True)
+    else:
+        input_files = glob.glob(os.path.join(first_path, "**/*-0.bin"), recursive=True)
+        test_dataset = MAPFDatasetBin(input_files, args.feature_dim, args.feature_type, first_step=True)
     val_loader = DataLoader(
         test_dataset,
         batch_size=1,

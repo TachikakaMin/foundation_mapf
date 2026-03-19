@@ -166,7 +166,7 @@ def _filter_constructor_kwargs(constructor, kwargs):
 
 
 def create_online_train_loaders(args):
-    from MAPF_online_dataset import MAPFOnlineDataset
+    from MAPF_online_dataset import MAPFOnlineBufferLoader
 
     map_files = sorted(glob.glob(os.path.join(args.train_map_path, "**/*.map"), recursive=True))
     if not map_files:
@@ -178,40 +178,35 @@ def create_online_train_loaders(args):
 
     train_loaders = {}
     train_loader_weights = {}
-    world_size = dist.get_world_size() if args.distributed else 1
 
     for dims, files in dimension_groups.items():
-        dataset_kwargs = {
+        loader_kwargs = {
+            "batch_size": args.batch_size,
             "time_limit_sec": args.online_time_limit_sec,
             "retry_limit": args.online_retry_limit,
             "seed": args.seed + args.local_rank * 1000003,
-            "first_step": False,
-            # integration hook: allow dataset implementations to shard by rank
-            "rank": args.local_rank,
-            "world_size": world_size,
+            "buffer_size": args.online_buffer_size,
+            "buffer_workers": args.num_workers,
+            "buffer_timeout_sec": args.online_buffer_timeout_sec,
         }
-        dataset_kwargs = _filter_constructor_kwargs(MAPFOnlineDataset, dataset_kwargs)
-        train_data = MAPFOnlineDataset(
+        loader_kwargs = _filter_constructor_kwargs(MAPFOnlineBufferLoader, loader_kwargs)
+        train_loader = MAPFOnlineBufferLoader(
             files,
             args.feature_dim,
             args.feature_type,
-            **dataset_kwargs,
+            **loader_kwargs,
         )
-        train_loader = DataLoader(
-            train_data,
-            **make_dataloader_kwargs(
-                args.batch_size,
-                args.num_workers,
-            ),
-        )
+        train_loader.start()
         train_loaders[dims] = train_loader
-        pair_weight = sum(getattr(pair, "weight", 0) for pair in getattr(train_data, "_pairs", []))
+        pair_weight = sum(getattr(pair, "weight", 0) for pair in getattr(train_loader, "pair_configs", []))
         train_loader_weights[dims] = pair_weight if pair_weight > 0 else len(files)
 
         if args.local_rank == 0:
             print(
                 f"Online train group {dims}: {len(files)} maps, "
-                f"sampling_weight={train_loader_weights[dims]}"
+                f"sampling_weight={train_loader_weights[dims]}, "
+                f"step_buffer={args.online_buffer_size}, "
+                f"workers={args.num_workers}"
             )
 
     if not train_loaders:
@@ -319,6 +314,15 @@ def make_dataloader_kwargs(batch_size, num_workers, *, sampler=None, shuffle=Fal
     return kwargs
 
 
+def close_loader_collection(loaders):
+    if not isinstance(loaders, dict):
+        return
+    for loader in loaders.values():
+        close_fn = getattr(loader, "close", None)
+        if callable(close_fn):
+            close_fn()
+
+
 def print_runtime_summary(
     args,
     model,
@@ -370,6 +374,9 @@ def print_runtime_summary(
                 ("estimated_train_samples", online_schedule["total_steps"] * args.batch_size),
                 ("online_time_limit_sec", args.online_time_limit_sec),
                 ("online_retry_limit", args.online_retry_limit),
+                ("online_buffer_size", args.online_buffer_size),
+                ("online_buffer_timeout_sec", args.online_buffer_timeout_sec),
+                ("online_buffer_unit", "steps_per_dim_group"),
             ]
         )
     else:
@@ -913,7 +920,7 @@ if __name__ == "__main__":
 
     # model
     if args.model == "unet":
-        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear)
+        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear, blocks_per_stage=args.blocks_per_stage)
     elif args.model == "cnn":
         net = CNN(n_channels=args.feature_dim, n_classes=args.action_dim)
     if args.model_path:
@@ -964,7 +971,7 @@ if __name__ == "__main__":
             sample_data,
             **make_dataloader_kwargs(
                 1,
-                1,
+                args.num_workers,
                 shuffle=False,
             ),
         )
@@ -983,16 +990,23 @@ if __name__ == "__main__":
         sample_candidates,
         online_schedule,
     )
-    train(
-        args,
-        net,
-        train_loaders,
-        train_loader_weights,
-        val_loaders,
-        sample_loader,
-        optimizer,
-        loss_fn,
-        device,
-    )
-    args.writer.flush()
-    args.writer.close()
+    try:
+        train(
+            args,
+            net,
+            train_loaders,
+            train_loader_weights,
+            val_loaders,
+            sample_loader,
+            optimizer,
+            loss_fn,
+            device,
+        )
+    finally:
+        close_loader_collection(train_loaders)
+        args.writer.flush()
+        args.writer.close()
+        # 强制退出，避免 mp.Queue 内部线程在解释器关闭时死锁
+        # Force exit to avoid mp.Queue internal thread deadlock during interpreter shutdown
+        if args.dataset_mode == "online":
+            os._exit(0)

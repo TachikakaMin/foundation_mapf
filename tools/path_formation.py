@@ -37,6 +37,11 @@ def move_agent(action, map_data, current_locations, temperature):
     # 使用与张量相同设备上的边界值进行裁剪
     tmp_current_locs[:, 0].clamp_(0, torch.tensor(height - 1, device=device))
     tmp_current_locs[:, 1].clamp_(0, torch.tensor(width - 1, device=device))
+    # 障碍物碰撞检测：走进障碍物的 agent 回退到原位
+    for i in range(agent_num):
+        r, c = tmp_current_locs[i, 0].item(), tmp_current_locs[i, 1].item()
+        if map_data[r, c] != 0:
+            tmp_current_locs[i] = current_locations[i]
     collision_flag_per_agent = torch.zeros(agent_num, dtype=torch.bool)
     while True:
         collision_flag = False
