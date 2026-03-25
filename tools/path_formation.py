@@ -168,8 +168,11 @@ def path_formation(
     feature = sample_data["feature"]
     file_name = sample_data["file_name"]
     map_name, path_name = parse_file_name(file_name)
-    agent_num = sample_data["mask"].sum()
+    agent_num = int(sample_data["mask"].sum().item())
     log_print(f"Path Formation: {path_name}")
+
+    if agent_num <= 0:
+        raise ValueError(f"inference sample has no agents: {file_name}")
 
     map_data = feature[0]
     distance_map = read_distance_map(map_name)
@@ -179,6 +182,10 @@ def path_formation(
     for i in range(agent_num):
         current_pos = torch.where(feature[1] == i + 1)
         goal_pos = torch.where(feature[2] == i + 1)
+        if current_pos[0].numel() == 0 or goal_pos[0].numel() == 0:
+            raise ValueError(
+                f"inference sample is missing agent/goal positions for agent {i + 1}: {file_name}"
+            )
         current_locations.append(torch.tensor([current_pos[0][0], current_pos[1][0]]))
         goal_locations.append(torch.tensor([goal_pos[0][0], goal_pos[1][0]]))
     

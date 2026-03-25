@@ -10,6 +10,7 @@
 - 根据配置选择离线或在线训练数据
 - 为验证集构建固定离线 `.mbin` 加载器
 - 执行训练、验证、TensorBoard 记录和模型保存
+- 在在线模式结束时显式清理自定义 online loader
 
 ## 主要函数
 
@@ -19,7 +20,7 @@
 
 ### `group_files_by_dims(file_paths, min_map_size=32)`
 
-按 `(height, width)` 对文件分组，并过滤过小地图。
+按 `(height, width)` 分组，并过滤过小地图。
 
 ### `create_offline_validation_loaders(args)`
 
@@ -30,7 +31,12 @@
 
 ### `create_offline_train_loaders(args)`
 
-保留旧训练模式：从 `args.dataset_path/**/*.mbin` 中按地图尺寸分组，并取每组后 `90%` 作为训练集。
+离线训练入口：
+
+- 从 `args.dataset_path/**/*.mbin` 扫描训练数据
+- 按地图尺寸分组
+- 对每组保留后 `90%` 文件作为训练集
+- 返回各组 `DataLoader` 与分组权重
 
 ### `create_online_train_loaders(args)`
 
@@ -38,8 +44,13 @@
 
 - 从 `args.train_map_path/**/*.map` 扫描地图
 - 按尺寸分组
-- 为每一组创建 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py) 的 `MAPFOnlineDataset`
-- 返回训练 loader 以及用于步数分配的组权重
+- 为每一组创建一个 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py) 的 `MAPFOnlineBufferLoader`
+- 把 `args.num_workers` 传给 `buffer_workers`
+- 把 `args.online_buffer_size` / `args.online_buffer_timeout_sec` 传给在线 step buffer
+- 启动每个 loader 的后台生产进程
+- 返回训练 loader 以及用于 online 采样的组权重
+
+这里的在线 loader 不是标准 `DataLoader`，而是一个自定义 batch 迭代器。
 
 ### `get_online_schedule(args)`
 
@@ -50,78 +61,49 @@
 - `online_save_interval_steps`
 - `online_inference_test_interval_steps`
 
-### `get_model_stats(model)`
+### `make_dataloader_kwargs(batch_size, num_workers, *, sampler=None, shuffle=False)`
 
-统计可训练参数量和模型大小（按 `float32` 估算 MB）。
+统一生成离线 `DataLoader` 参数。
 
-### `format_kv_table(rows)`
+当前行为：
 
-把配置项格式化成易读的两列表格字符串。
+- `num_workers > 0` 时启用 `persistent_workers=True`
+- `num_workers > 0` 时设置 `prefetch_factor=2`
+- CUDA 可用时启用 `pin_memory=True`
 
-### `summarize_loader_groups(loaders, weights=None)`
+### `close_loader_collection(loaders)`
 
-把 train / val loader 的地图尺寸分组整理成一行摘要文本。
+对 loader 字典做统一清理。
 
-### `print_runtime_summary(args, model, device, train_loaders, train_loader_weights, val_loaders)`
+如果某个 loader 提供 `close()`，这里会主动调用。在线模式的 `MAPFOnlineBufferLoader` 就依赖这个清理钩子。
+
+### `print_runtime_summary(...)`
 
 在训练开始前打印一份运行参数表，并写入 TensorBoard。
 
-表中包含：
+在线模式下，额外会显示：
 
-- 配置来源 `config_source`
-- 数据模式和数据路径
-- 训练 / 验证尺寸分组
-- 模型类型、参数量和模型大小
-- offline 下的 epoch 周期，或 online 下的 step 周期
-- inference test 配置
+- `bilinear`
+- `first_layer_channels`
+- `blocks_per_stage`
+- `online_total_steps`
+- `online_eval_interval_steps`
+- `online_save_interval_steps`
+- `online_inference_interval_steps`
+- `online_time_limit_sec`
+- `online_retry_limit`
+- `online_buffer_size`
+- `online_buffer_timeout_sec`
+- `online_buffer_unit=steps_per_dim_group`
 
-### `evaluate_valid_loss(args, model, val_loader, loss_fn, device)`
-
-在验证集上计算平均损失。
-
-- 输入：
-  - `model`: 需要返回 `(logits, prob)` 的模型
-  - `val_loader`: 数据加载器
-  - `loss_fn`: 逐像素损失函数，当前训练流程使用 `CrossEntropyLoss(reduction="none")`
-  - `device`: `cpu` 或 `cuda`
-- 输出：
-  - 按智能体数量归一化后的验证损失
-
-接口特点：
-
-- 只统计 `mask == 1` 的位置
-- 进度条显示依赖 `args.local_rank`
-
-### `run_inference_test(args, model, sample_loader, device, epoch)`
-
-训练中的显式 inference test。
-
-它会：
-
-- 从固定 `sample_loader` 中读取一个或多个首步样本
-- 调用 [tools/path_formation.py](/home/yimin/research/RAILGUN/tools/path_formation.py) 做 rollout
-- 记录并打印 `total_cost`、`ep_length`、`makespan`、`isr`、`csr`、`final_distance` 等指标
-- 同时把单样本指标和平均指标写到 TensorBoard
-
-### `train_offline(args, model, train_loaders, val_loaders, sample_loader, optimizer, loss_fn, device)`
-
-离线训练主循环。
-
-- 按 epoch 遍历固定 `.mbin` 数据
-- `eval_interval` / `save_interval` / `inference_test_interval` 都按 epoch 生效
-
-### `train_online(args, model, train_loaders, train_loader_weights, val_loaders, sample_loader, optimizer, loss_fn, device)`
+### `train_online(...)`
 
 在线训练主循环。
 
 - 不再使用 epoch 作为训练进度单位
 - 总进度由 `online_total_steps` 定义
 - 每一步按组权重从不同地图尺寸 loader 中采样一个 batch
-- 验证、保存和 inference test 都按 step 触发
-
-### `train(args, model, train_loaders, train_loader_weights, val_loaders, sample_loader, optimizer, loss_fn, device)`
-
-按 `dataset_mode` 在 `train_offline()` 和 `train_online()` 之间分发。
+- 验证、保存和 inference test 都按 optimizer step 触发
 
 ## TensorBoard 指标
 
@@ -152,18 +134,17 @@
 `if __name__ == "__main__":` 下的流程如下：
 
 1. 从 [train_args.py](/home/yimin/research/RAILGUN/train_args.py) 读取参数
-   - 支持 `--config <yaml>` 先加载配置文件，再用 CLI 覆盖
 2. 根据 `--distributed` 决定是否初始化 `torch.distributed`
 3. 创建带时间戳的运行目录，并在总训练步数 `>= 1000` 时启用 TensorBoard `SummaryWriter`
 4. 固定随机种子
 5. 根据 `--model` 初始化 [models/unet.py](/home/yimin/research/RAILGUN/models/unet.py) 或 [models/CNN.py](/home/yimin/research/RAILGUN/models/CNN.py)
 6. 始终构建离线固定验证集
-7. 根据 `--dataset_mode` 选择：
-   - 离线 `.mbin` 训练
-   - 在线 `MAPFOnlineDataset` 训练
+7. 根据 `--dataset_mode` 选择离线或在线训练 loader
 8. 为 inference test 构建固定离线 `sample_loader`
-9. 打印运行参数表
+9. 打印 `Runtime Config`
 10. 调用 `train(...)`
+11. 在 `finally` 中关闭在线 loader、flush/close writer
+12. 在线模式下调用 `os._exit(0)`，避免 `mp.Queue` 内部线程在解释器关闭阶段死锁
 
 ## 输入输出与接口情况
 
@@ -171,9 +152,9 @@
 
 离线模式依赖 [MAPF_dataset_mbin.py](/home/yimin/research/RAILGUN/MAPF_dataset_mbin.py)。
 
-在线模式依赖 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py)。
+在线模式依赖 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py) 的 `MAPFOnlineBufferLoader`。
 
-两者都返回同样的样本字典：
+两者最终都返回同样的 batch 字典：
 
 - `feature`
 - `action`
@@ -196,7 +177,7 @@
   - online: `model_checkpoint_step_<N>.pth`
 - 启动时的 `Runtime Config` 参数表
 - 训练中的 inference test 指标
-- TensorBoard 中的 `Args` 和 `RuntimeConfig` 文本参数快照
+- TensorBoard 中的 `Args` 和 `RuntimeConfig` 文本快照
 
 ## 用法
 
@@ -216,6 +197,7 @@ torchrun --nproc_per_node=8 train.py --batch_size 8 --distributed
 
 # 在线训练，固定离线验证
 python train.py \
+  --config config.online.yaml \
   --dataset_mode online \
   --train_map_path data/map_files \
   --val_dataset_path data/online_eval_input_data \
@@ -223,10 +205,14 @@ python train.py \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
+  --online_time_limit_sec 1 \
+  --online_retry_limit 2 \
+  --online_buffer_size 10240 \
+  --online_buffer_timeout_sec 0.1 \
   --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --inference_num_cases 1 \
   --inference_action_choice max \
   --steps 100 \
   --batch_size 64 \
-  --num_workers 2
+  --num_workers 20
 ```

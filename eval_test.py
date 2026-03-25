@@ -37,7 +37,7 @@ def main():
         "-flc",
         type=int,
         default=64,
-        help="First layer channels",
+        help="First layer channels; must match the checkpoint architecture",
     )
     parser.add_argument(
         "--output_dir",
@@ -61,7 +61,7 @@ def main():
         "--blocks_per_stage",
         type=int,
         default=1,
-        help="ResBlocks per UNet stage (0=legacy DoubleConv)",
+        help="ResBlocks per UNet stage (0=legacy DoubleConv); must match the checkpoint architecture",
     )
     args = parser.parse_args()
 

@@ -82,6 +82,8 @@ Project source documentation is under `doc/`, and the directory structure mirror
 - Source file `data_generation_LACAM/maze_generator.py` maps to `doc/data_generation_LACAM/maze_generator.py.md`
 - Source file `MAPF_online_dataset.py` maps to `doc/MAPF_online_dataset.py.md`
 - Source file `tools/extensions/lacam_online_native.cpp` maps to `doc/tools/extensions/lacam_online_native.cpp.md`
+- Source file `tools/profile_online_data.py` maps to `doc/tools/profile_online_data.py.md`
+- Source file `scaling_law.py` maps to `doc/scaling_law.py.md`
 
 The documentation currently covers the repository's project-owned source files and scripts, including Python modules, shell scripts, C++ sources, and CMake files. The index is available at `doc/README.md`.
 
@@ -126,45 +128,67 @@ Notes:
 - by default it reserves `2` CPU cores and does not try to use the full machine
 - you can override concurrency with `PARALLEL_JOBS=<N>` or `RESERVED_CORES=<N>`
 
-#### Step 3: Generate path files with LACAM
+#### Step 3: Precompute distance maps
 
 ```bash
-bash gen_pathfile.sh
+python -m tools.precompute_distance_maps data/map_files
 ```
 
 Expected output:
 
-- path files under `data/path_files/...`
+- distance maps under `data/distance_maps/...`
 
-Notes:
+#### Step 4: Generate offline training data
 
-- `gen_pathfile.sh` now also reserves `2` CPU cores by default
-- you can override concurrency with `PARALLEL_JOBS=<N>` or `RESERVED_CORES=<N>`
+**Option A: Parallel generation (Recommended)**
 
-#### Step 4: Convert `.path` to `.mbin` and precompute distance maps
-
-Recommended C++ path converter:
+Use the new parallel data generation script for fast, efficient data creation:
 
 ```bash
+python tools/generate_offline_data.py \
+    --output_dir data/input_data \
+    --num_scenarios 100000 \
+    --workers 20 \
+    --time_limit 5 \
+    --retry_limit 5 \
+    --agent_counts 16 32 64 96 128 256 512 1024 \
+    --map_pattern "data/map_files/maze-*/*.map" \
+    --scenarios_per_file 500
+```
+
+This will:
+- Generate 100k scenarios in parallel using 20 workers
+- Support all agent counts including 512 and 1024 (for high-density scenarios)
+- Use both 32x32 and 64x64 maps
+- Take approximately 7-15 minutes
+- Output ~5-10 GB of .mbin files
+
+**Option B: Traditional path-based generation**
+
+Generate path files with LACAM, then convert:
+
+```bash
+# Generate path files
+bash gen_pathfile.sh
+
+# Convert to .mbin (C++ converter recommended)
 cd tools
 bash build.sh converter
 cd ..
-
 ./tools/convert_path_to_mbin data/path_files
-python -m tools.precompute_distance_maps data/map_files
-```
 
-Python fallback:
-
-```bash
+# Or use Python fallback
 python -m tools.convert_lacam_path_to_bin data/path_files
-python -m tools.precompute_distance_maps data/map_files
 ```
 
 Expected output:
 
 - training / validation `.mbin` under `data/input_data/...`
-- distance maps under `data/distance_maps/...`
+
+**Notes:**
+- Option A is faster and more flexible for large-scale data generation
+- Option B is useful if you already have .path files or need specific scenarios
+- Both produce compatible .mbin files for training
 
 #### Step 5: Check required offline directories
 
@@ -302,17 +326,22 @@ python train.py \
   --online_eval_interval_steps 4000 \
   --online_save_interval_steps 4000 \
   --online_inference_test_interval_steps 4000 \
-  --online_time_limit_sec 2 \
-  --online_retry_limit 20 \
+  --online_time_limit_sec 1 \
+  --online_retry_limit 2 \
+  --online_buffer_size 10240 \
+  --online_buffer_timeout_sec 0.1 \
   --sample_data_path data/online_eval_input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin \
   --batch_size 64 \
-  --num_workers 2
+  --num_workers 20
 ```
 
 Online mode key idea:
 
 - training progress is controlled by optimizer steps, not epochs
 - validation / save / inference test are also step-based
+- each map-size group owns one online step buffer
+- `online_buffer_size` is measured in step samples, not trajectories
+- online `num_workers` means scenario producer processes; it is now the only worker-count knob
 
 ### Where To Change Parameters
 
@@ -348,13 +377,15 @@ python train.py --config config.online.yaml
 | Data | `--dataset_path` | 离线训练/验证的 `.mbin` 根目录 |
 | Data | `--val_dataset_path` | 固定离线验证集根目录，不填则回退到 `--dataset_path` |
 | Data | `--train_map_path` | 在线训练时扫描 `.map` 的根目录 |
-| Data | `--num_workers` | PyTorch DataLoader worker 数 |
+| Data | `--num_workers` | 统一 worker 数：offline 为 DataLoader workers，online 为 scenario producer 进程数，同时复用于验证/样例 DataLoader |
 | Online train | `--online_total_steps` | 在线训练总优化步数 |
 | Online train | `--online_eval_interval_steps` | 在线训练按多少步做一次验证 |
 | Online train | `--online_save_interval_steps` | 在线训练按多少步保存一次 checkpoint |
 | Online train | `--online_inference_test_interval_steps` | 在线训练按多少步做一次 inference test |
 | Online train | `--online_time_limit_sec` | 单次 LACAM 在线生成的时间上限 |
-| Online train | `--online_retry_limit` | 单个 worker 生成失败时的重试次数 |
+| Online train | `--online_retry_limit` | 在线生成失败时的重试次数 |
+| Online train | `--online_buffer_size` | 在线 step buffer 容量，单位是 step，按地图尺寸分组分别生效 |
+| Online train | `--online_buffer_timeout_sec` | 在线训练消费者等待 step buffer 的超时时间 |
 | Optimization | `--epochs` | 只用于离线模式 |
 | Optimization | `--batch_size` | batch size |
 | Optimization | `--learning_rate` | 学习率 |
@@ -362,7 +393,8 @@ python train.py --config config.online.yaml
 | Training loop | `--eval_interval` | 离线模式下每隔多少个 epoch 做一次验证 loss |
 | Training loop | `--save_interval` | 离线模式下每隔多少个 epoch 保存一次 checkpoint |
 | Model | `--model` | `unet` 或 `cnn` |
-| Model | `--first_layer_channels` | `UNet` 首层通道数，直接影响模型大小 |
+| Model | `--first_layer_channels` | `UNet` 首层基础通道数，是主要模型规模控制旋钮之一 |
+| Model | `--blocks_per_stage` | 每个 UNet stage 的 ResBlock 数；`0` 表示兼容旧版 DoubleConv，也是模型规模控制旋钮之一 |
 | Model | `--feature_dim` | 输入特征维度 |
 | Model | `--feature_type` | 特征构造方式，例如 `gradient` |
 | Model | `--action_dim` | 动作类别数，默认 5 |
@@ -371,6 +403,73 @@ python train.py --config config.online.yaml
 | Inference test | `--inference_test_interval` | 离线模式下每隔多少个 epoch 跑一次 inference test；`0` 表示复用 `--eval_interval` |
 | Inference test | `--inference_action_choice` | inference rollout 用 `sample` 还是 `max` 选动作 |
 | Inference test | `--steps` | inference rollout 的最大步数 |
+
+### Online Data Path
+
+在线训练当前不是直接把 `MAPFOnlineDataset` 塞进 PyTorch `DataLoader`。主路径是一个自定义的 `MAPFOnlineBufferLoader`：
+
+- 多个 producer 进程持续调用 LACAM 生成 raw scenario
+- 主进程 builder 线程把 scenario 展开成逐 step 样本
+- 训练循环持续从 step buffer 取 batch
+
+这几个参数的含义最容易混：
+
+- `online_buffer_size`：step buffer 容量，单位是 `step`，不是 trajectory
+- `num_workers`：在线模式下表示 producer 进程数
+- `online_buffer_timeout_sec`：消费者等待 step buffer 的超时
+
+### Profile Online Data
+
+如果想单独看数据端吞吐，不必直接起完整训练，可以先跑：
+
+```bash
+python tools/profile_online_data.py --config config.online.yaml
+
+python tools/profile_online_data.py \
+  --config config.online.yaml \
+  --num_workers 20 \
+  --batch_size 64 \
+  --batches 50 \
+  --warmup 5
+```
+
+这个脚本会输出 batch fetch latency 的均值和分位数；加上 `--scenario_samples` 还能直接看 raw scenario 生成时间。
+
+### Scaling Law Sweep
+
+仓库里现在还提供了一个小型 scaling law 扫描脚本：`scaling_law.py`。
+
+它会基于一份 online 配置，批量扫两条轴：
+
+- 模型大小轴 `N`：通过 `first_layer_channels × blocks_per_stage` 控制
+- 数据量轴 `D`：通过一次长训练里的 milestone `step` 控制
+
+默认行为：
+
+- 每个模型只训练一次到最大 milestone（默认 100k steps）
+- 自动选择一个能覆盖这些 milestone 的 step interval 来驱动 eval / save / inference
+- 每个 milestone 记录参数量、训练 loss、验证 loss 和 inference summary
+- 每跑完一组就把结果追加写到 CSV，方便中断后保留结果
+
+**更新**：现在支持更密集的测试：
+- Milestone 采样点：每 5k 一次（5k, 10k, 15k, ..., 100k），共 20 个点
+- Inference test cases：12 个固定场景，覆盖多种地图大小和 agent 密度
+  - 32x32 × 128 agents：4 个场景
+  - 64x64 × 256 agents：4 个场景
+  - 64x64 × 512 agents：2 个场景
+  - 64x64 × 1024 agents：2 个场景（OOD 测试）
+
+常见用法：
+
+```bash
+python scaling_law.py --config config.online.yaml --dry_run
+
+python scaling_law.py \
+  --config config.online.yaml \
+  --python /home/yimintan/anaconda3/envs/py38/bin/python \
+  --models XS S M \
+  --output_csv scaling_law_results.csv
+```
 
 ### Inference Test During Training
 
@@ -404,6 +503,18 @@ python train.py \
 - `online` 的验证、保存和 inference test 也全部按 step 配置，不再复用 epoch 语义
 
 ## Evaluation Test
+
+如果你评估的是非默认宽度/深度的 UNet checkpoint，例如 scaling law 扫描出来的模型，记得把训练时一致的结构参数也传给 `eval_test.py`，尤其是：
+
+- `--first_layer_channels`
+- `--blocks_per_stage`
+- `--bilinear`
+
 ```bash
-python eval_test.py --model_path model_checkpoint_epoch_4.pth --dataset_paths data/input_data/maze-32-32-60-1-75/maze-32-32-60-1-75-0-16/maze-32-32-60-1-75-0-16-1.bin --show
+python eval_test.py \
+  --model_path model_checkpoint_epoch_4.pth \
+  --dataset_paths data/input_data/maze-32-32-60-1-75/maze-32-32-60-1-75-0-16/maze-32-32-60-1-75-0-16-1.bin \
+  --first_layer_channels 64 \
+  --blocks_per_stage 1 \
+  --show
 ```

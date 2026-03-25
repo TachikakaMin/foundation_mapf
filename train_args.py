@@ -219,8 +219,45 @@ def get_args():
     parser.add_argument(
         "--weight_decay", "-wd", type=float, default=1e-3, help="weight decay"
     )
+    parser.add_argument(
+        "--lr_decay_step_size",
+        type=int,
+        default=0,
+        help="optimizer-step interval for StepLR; <= 0 disables LR decay",
+    )
+    parser.add_argument(
+        "--lr_decay_gamma",
+        type=float,
+        default=1.0,
+        help="multiplicative factor for StepLR",
+    )
     parser.add_argument("--eval_interval", type=int, default=2, help="offline mode only: eval interval in epochs")
     parser.add_argument("--save_interval", type=int, default=2, help="offline mode only: save interval in epochs")
+    # offline step-based mode (alternative to epoch-based)
+    parser.add_argument(
+        "--offline_total_steps",
+        type=int,
+        default=0,
+        help="offline mode: total optimizer steps (0 means use epoch-based mode)",
+    )
+    parser.add_argument(
+        "--offline_eval_interval_steps",
+        type=int,
+        default=2000,
+        help="offline mode: run validation every N optimizer steps (only when offline_total_steps > 0)",
+    )
+    parser.add_argument(
+        "--offline_save_interval_steps",
+        type=int,
+        default=2000,
+        help="offline mode: save checkpoint every N optimizer steps (only when offline_total_steps > 0)",
+    )
+    parser.add_argument(
+        "--offline_inference_test_interval_steps",
+        type=int,
+        default=2000,
+        help="offline mode: run inference test every N optimizer steps (only when offline_total_steps > 0)",
+    )
     # model
     parser.add_argument(
         "--feature_dim", "-fd", type=int, default=6, help="feature dimension"

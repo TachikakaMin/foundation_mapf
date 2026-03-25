@@ -42,7 +42,7 @@ class MAPFOnlineDataset(IterableDataset):
     one scenario, then yields all timestep samples from that scenario.
     """
 
-    DEFAULT_AGENT_COUNTS = (128, 96, 64, 32, 16)
+    DEFAULT_AGENT_COUNTS = (256, 128, 96, 64, 32, 16)
 
     def __init__(
         self,
@@ -307,7 +307,9 @@ class MAPFOnlineDataset(IterableDataset):
     @staticmethod
     def _offline_num_paths_weight(density: int, agent_num: int) -> int:
         d = float(density)
-        if agent_num == 128:
+        if agent_num == 256:
+            value = 20 + d * 0.5
+        elif agent_num == 128:
             value = 60 + d * 2.0
         elif agent_num == 96:
             value = 40 + d * 1.0
@@ -668,25 +670,24 @@ class MAPFOnlineDataset(IterableDataset):
             self.feature_dim,
             self.feature_type,
         )
-        input_features = torch.from_numpy(input_features_np)
 
-        agent_locations = torch.from_numpy(agent_locations_np)
-        actions_t = torch.from_numpy(actions[step_idx].astype(np.int64, copy=False))
+        actions_np = actions[step_idx].astype(np.int64, copy=False)
 
-        output_features = torch.zeros(map_data.shape, dtype=torch.long)
-        output_features[agent_locations[:, 0], agent_locations[:, 1]] = actions_t
+        h, w = map_data.shape
+        action_map = np.zeros((h, w), dtype=np.int64)
+        action_map[agent_locations_np[:, 0], agent_locations_np[:, 1]] = actions_np
 
-        mask = torch.zeros(map_data.shape, dtype=torch.uint8)
-        mask[agent_locations[:, 0], agent_locations[:, 1]] = 1
+        mask_map = np.zeros((h, w), dtype=np.uint8)
+        mask_map[agent_locations_np[:, 0], agent_locations_np[:, 1]] = 1
 
         file_name = (
             f"online/{pair.map_name}/{pair.map_name}-{pair.agent_num}-{scenario_seed}"
         )
 
         return {
-            "feature": input_features,
-            "action": output_features,
-            "mask": mask,
+            "feature": input_features_np,
+            "action": action_map,
+            "mask": mask_map,
             "file_name": file_name,
         }
 
@@ -707,11 +708,11 @@ def _scenario_producer_process(
 ):
     """独立进程：只做 LACAM 求解，把 raw scenario 数据发回主进程。
     Standalone process: runs LACAM only, sends raw scenario data back to main process."""
-    # 每个进程独立 import，避免 fork 后共享状态问题
-    # Each process imports independently to avoid shared-state issues after fork
     from tools.extensions import generate_lacam_solution_cpp as _gen_lacam
 
     rng = np.random.default_rng(base_seed + (worker_idx + 1) * 104_729)
+    map_cache: Dict[str, np.ndarray] = {}
+    distance_map_cache: Dict[str, object] = {}
 
     def _normalize_seed(raw: int) -> int:
         s = int(raw) % INT32_MAX
@@ -799,7 +800,6 @@ def _scenario_producer_process(
                 if pos_raw is None:
                     continue
                 # 发送轻量数据：pair index + seed + raw numpy 数组
-                # Send lightweight data: pair index + seed + raw numpy arrays
                 try:
                     scenario_queue.put(
                         (pair_idx, scenario_seed, pos_raw, act_raw, goal_raw),
@@ -869,14 +869,14 @@ class MAPFOnlineBufferLoader:
         )
 
         # 进程间共享的 scenario queue（LACAM 结果）和 step queue（最终样本）
-        # Shared scenario queue (LACAM results) and step queue (final samples)
         self._scenario_queue: mp.Queue = mp.Queue(maxsize=self.buffer_workers * 4)
         self._step_queue: "queue.Queue[dict]" = queue.Queue(maxsize=self.buffer_size)
         self._stop_event = mp.Event()
         self._seed_counter = mp.Value("i", 0)
         self._seed_counter_lock = mp.Lock()
         self._processes: List[mp.Process] = []
-        self._builder_thread: Optional[threading.Thread] = None
+        self._num_builder_threads = 4
+        self._builder_threads: List[threading.Thread] = []
         self._started = False
         self._start_lock = threading.Lock()
         self._error: Optional[BaseException] = None
@@ -919,55 +919,69 @@ class MAPFOnlineBufferLoader:
                 p.start()
                 self._processes.append(p)
 
-            # 主进程的 builder 线程：从 scenario_queue 取 raw 数据，做 feature construction，放入 step_queue
-            # Builder thread in main process: takes raw data from scenario_queue,
-            # does feature construction, pushes to step_queue
-            self._builder_thread = threading.Thread(
-                target=self._builder_loop, daemon=True,
-            )
-            self._builder_thread.start()
+            for _ in range(self._num_builder_threads):
+                t = threading.Thread(target=self._builder_loop, daemon=True)
+                t.start()
+                self._builder_threads.append(t)
 
     def close(self):
         if not self._started:
             return
-        self._started = False  # 防止 atexit 重复调用 / prevent atexit double-call
+        self._started = False
 
         self._stop_event.set()
-
-        # 禁止 mp.Queue 析构时 join feeder 线程（必须在 kill 之前调用）
-        # Must call before kill — after kill the queue's internal state is corrupted
         self._scenario_queue.cancel_join_thread()
 
-        # 杀掉所有 producer 进程
-        # Kill all producer processes — they may be stuck in pipe write
         for p in self._processes:
             if p.is_alive():
                 p.kill()
         for p in self._processes:
             p.join(timeout=2.0)
 
-        # kill 后不能再碰 scenario_queue（内部 pipe 状态已损坏）
-        # Do NOT touch scenario_queue after kill (internal pipe is corrupted)
-
-        # 排空 step_queue 让 builder 线程从 put 阻塞中退出
-        # Drain step_queue to unblock builder thread stuck on put
         while not self._step_queue.empty():
             try:
                 self._step_queue.get_nowait()
             except queue.Empty:
                 break
 
-        if self._builder_thread is not None:
-            self._builder_thread.join(timeout=2.0)
+        for t in self._builder_threads:
+            t.join(timeout=2.0)
 
     def __iter__(self):
         self.start()
+        batch_queue: "queue.Queue[dict]" = queue.Queue(maxsize=4)
+
+        def _prefetch_loop():
+            try:
+                while not self._stop_event.is_set():
+                    batch_samples = []
+                    while len(batch_samples) < self.batch_size:
+                        if self._stop_event.is_set():
+                            return
+                        sample = self._get_next_step_sample()
+                        batch_samples.append(sample)
+                    batch = self._collate_step_samples(batch_samples)
+                    while not self._stop_event.is_set():
+                        try:
+                            batch_queue.put(batch, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
+            except Exception:
+                pass
+
+        prefetch_thread = threading.Thread(target=_prefetch_loop, daemon=True)
+        prefetch_thread.start()
+
         while True:
-            batch_samples = []
-            while len(batch_samples) < self.batch_size:
-                sample = self._get_next_step_sample()
-                batch_samples.append(sample)
-            yield self._collate_step_samples(batch_samples)
+            try:
+                batch = batch_queue.get(timeout=self.buffer_timeout_sec)
+                yield batch
+            except queue.Empty:
+                self._raise_if_error()
+                if self._stop_event.is_set():
+                    break
+                continue
 
     def _set_error(self, exc: BaseException):
         with self._error_lock:
@@ -991,8 +1005,7 @@ class MAPFOnlineBufferLoader:
         raise RuntimeError("Online step buffer stopped unexpectedly.")
 
     def _builder_loop(self):
-        """主进程线程：从 scenario_queue 消费 raw scenario，做 normalize + feature construction，推入 step_queue。
-        Main-process thread: consumes raw scenarios, does normalize + feature construction, pushes to step_queue."""
+        """主进程线程：从 scenario_queue 消费 raw scenario，做 normalize + feature construction，推入 step_queue。"""
         map_cache: Dict[str, np.ndarray] = {}
         distance_map_cache: Dict[str, object] = {}
         pairs = self._dataset._pairs
@@ -1007,7 +1020,6 @@ class MAPFOnlineBufferLoader:
                 pair_idx, scenario_seed, pos_raw, act_raw, goal_raw = item
                 pair = pairs[pair_idx]
 
-                # normalize（复用 dataset 的逻辑）
                 parsed = self._dataset._normalize_solution_arrays(
                     pos_raw, act_raw, goal_raw,
                     expected_steps=None, expected_agent_num=None,
@@ -1018,10 +1030,8 @@ class MAPFOnlineBufferLoader:
                 if positions.shape[0] == 0 or positions.shape[1] == 0:
                     continue
 
-                # 批量构建所有 step 的训练样本
-                # Build all step samples for this scenario
-                samples = [
-                    self._dataset._build_step_sample(
+                for step_idx in range(positions.shape[0]):
+                    sample = self._dataset._build_step_sample(
                         pair=pair,
                         scenario_seed=int(scenario_seed),
                         positions=positions,
@@ -1031,9 +1041,6 @@ class MAPFOnlineBufferLoader:
                         map_cache=map_cache,
                         distance_map_cache=distance_map_cache,
                     )
-                    for step_idx in range(positions.shape[0])
-                ]
-                for sample in samples:
                     while not self._stop_event.is_set():
                         try:
                             self._step_queue.put(sample, timeout=0.1)
@@ -1045,10 +1052,10 @@ class MAPFOnlineBufferLoader:
 
     @staticmethod
     def _collate_step_samples(samples: Sequence[dict]):
-        feature = torch.stack([sample["feature"] for sample in samples], dim=0)
-        action = torch.stack([sample["action"] for sample in samples], dim=0)
-        mask = torch.stack([sample["mask"] for sample in samples], dim=0)
-        file_name = [sample["file_name"] for sample in samples]
+        feature = torch.from_numpy(np.stack([s["feature"] for s in samples], axis=0)).pin_memory()
+        action = torch.from_numpy(np.stack([s["action"] for s in samples], axis=0)).pin_memory()
+        mask = torch.from_numpy(np.stack([s["mask"] for s in samples], axis=0)).pin_memory()
+        file_name = [s["file_name"] for s in samples]
         return {
             "feature": feature,
             "action": action,

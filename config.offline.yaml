@@ -14,13 +14,25 @@ sample_data_path:  # 训练中 inference test 使用的固定离线 .mbin 样本
 inference_num_cases: 1  # 每次 inference test 运行的固定样本数量。Number of fixed sample cases evaluated in each inference test.
 inference_test_interval: 0  # 离线模式下每隔多少个 epoch 跑一次 inference test，0 表示复用 eval_interval。Run inference test every N epochs in offline mode; 0 means reuse eval_interval.
 inference_action_choice: max  # inference rollout 的动作选择策略，max 更稳定，sample 更随机。Action selection strategy for inference rollout; max is more stable while sample is more stochastic.
-num_workers: 20  # DataLoader worker 数。Number of DataLoader workers.
+num_workers: 4  # 文件级 shuffle + 文件内顺序读取，HDD 友好。File-level shuffle + sequential read within files, HDD friendly.
 
 # 优化。Optimization.
-epochs: 100  # 离线训练总 epoch 数。Total training epochs for offline mode.
 batch_size: 64  # 训练 batch size。Training batch size.
-learning_rate: 1.0e-5  # 学习率。Learning rate.
+learning_rate: 1.0e-4  # 学习率。Learning rate.
 weight_decay: 1.0e-3  # AdamW 权重衰减。AdamW weight decay.
+lr_decay_step_size: 40000  # StepLR 的步长（按 optimizer step 计）。StepLR interval in optimizer steps.
+lr_decay_gamma: 0.5  # StepLR 的衰减倍率。StepLR multiplicative decay factor.
+
+# 训练模式选择。Training mode selection.
+# 方式 1: Step-based（推荐，每个样本只用一次，类似 online 模式）。Method 1: Step-based (recommended, each sample used once, similar to online mode).
+offline_total_steps: 100000  # 设置 > 0 启用 step-based 模式；0 表示使用 epoch-based 模式。Set > 0 to enable step-based mode; 0 means use epoch-based mode.
+offline_eval_interval_steps: 2000  # step-based 模式下每隔多少步做一次验证。Run validation every N steps in step-based mode.
+offline_save_interval_steps: 2000  # step-based 模式下每隔多少步保存一次 checkpoint。Save checkpoint every N steps in step-based mode.
+offline_inference_test_interval_steps: 2000  # step-based 模式下每隔多少步做一次 inference test。Run inference test every N steps in step-based mode.
+
+# 方式 2: Epoch-based（传统模式，会重复遍历数据）。Method 2: Epoch-based (traditional mode, will iterate over data multiple times).
+# 如果 offline_total_steps = 0，则使用以下 epoch 参数。If offline_total_steps = 0, use the following epoch parameters.
+epochs: 100  # 离线训练总 epoch 数。Total training epochs for offline mode.
 eval_interval: 2  # 每隔多少个 epoch 做一次验证。Run validation every N epochs.
 save_interval: 2  # 每隔多少个 epoch 保存一次 checkpoint。Save a checkpoint every N epochs.
 
@@ -31,6 +43,7 @@ steps: 300  # inference rollout 的最大步数。Maximum rollout steps for infe
 action_dim: 5  # 动作类别数。Number of action classes.
 model: unet  # 模型类型，可选 unet 或 cnn。Model type, typically unet or cnn.
 bilinear: false  # 是否在 UNet 中使用双线性上采样。Whether to use bilinear upsampling in UNet.
-first_layer_channels: 64  # UNet 首层通道数，直接影响模型大小。First-layer channel count in UNet; directly affects model size.
+first_layer_channels: 64  # UNet 首层基础通道数，是主要模型规模控制旋钮之一。First-layer base channel count in UNet; one of the main model scaling knobs.
+blocks_per_stage: 1  # 每个 UNet stage 的 ResBlock 数；0 表示退回旧版 DoubleConv。Number of ResBlocks per UNet stage; 0 falls back to legacy DoubleConv.
 distributed: false  # 是否启用分布式训练。Whether to enable distributed training.
 model_path: null  # 预训练模型或断点权重路径，null 表示从头开始。Path to a pretrained model or checkpoint; null means train from scratch.

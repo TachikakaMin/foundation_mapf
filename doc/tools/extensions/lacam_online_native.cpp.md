@@ -2,7 +2,7 @@
 
 ## 文件作用
 
-这个文件实现了在线训练用的原生 LACAM bridge。它直接链接 vendored `lacam3` 库，在内存中创建实例、求解并返回整条轨迹，不再经过 `.path` 或 `.mbin` 的中间文件。
+这个文件实现在线训练用的原生 LACAM bridge。它直接链接 vendored `lacam3` 库，在内存中创建实例、求解并返回整条轨迹，不再经过 `.path` 或 `.mbin` 的中间文件。
 
 它是 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py) 的核心依赖。
 
@@ -55,7 +55,14 @@
    - 最终目标位置
 7. 返回 Python 字典
 
-为了配合 [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py) 的后台预取，这个扩展在执行 `solve(...)` 和可行性检查时会主动释放 Python GIL。这样同一个 DataLoader worker 进程里的后台线程可以在主线程消费当前轨迹 step 样本时并行生成下一条 scenario。
+### GIL 处理
+
+这个扩展在执行 `solve(...)` 和可行性检查时会主动释放 Python GIL。
+
+这意味着：
+
+- 如果调用方在同一进程里做线程级并发，求解阶段不会被 Python GIL 卡住
+- 当前正式在线训练主路径虽然主要依赖 `MAPFOnlineBufferLoader` 的多进程 producer，但这个 bridge 仍然保持线程友好，便于单进程调试和独立 profiling
 
 ## 接口情况
 
@@ -63,6 +70,7 @@
 
 - [tools/extensions/__init__.py](/home/yimin/research/RAILGUN/tools/extensions/__init__.py)
 - [MAPF_online_dataset.py](/home/yimin/research/RAILGUN/MAPF_online_dataset.py)
+- [tools/profile_online_data.py](/home/yimin/research/RAILGUN/tools/profile_online_data.py)
 
 ### 外部依赖
 

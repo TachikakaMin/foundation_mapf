@@ -24,6 +24,8 @@ epochs: 100  # 离线训练总 epoch 数。Total training epochs for offline mod
 batch_size: 64  # 训练 batch size。Training batch size.
 learning_rate: 1.0e-5  # 学习率。Learning rate.
 weight_decay: 1.0e-3  # AdamW 权重衰减。AdamW weight decay.
+lr_decay_step_size: 40000  # StepLR 的步长（按 optimizer step 计）。StepLR interval in optimizer steps.
+lr_decay_gamma: 0.5  # StepLR 的衰减倍率。StepLR multiplicative decay factor.
 eval_interval: 2  # 每隔多少个 epoch 做一次验证。Run validation every N epochs.
 save_interval: 2  # 每隔多少个 epoch 保存一次 checkpoint。Save a checkpoint every N epochs.
 
@@ -34,6 +36,7 @@ steps: 300  # inference rollout 的最大步数。Maximum rollout steps for infe
 action_dim: 5  # 动作类别数。Number of action classes.
 model: unet  # 模型类型，可选 unet 或 cnn。Model type, typically unet or cnn.
 bilinear: false  # 是否在 UNet 中使用双线性上采样。Whether to use bilinear upsampling in UNet.
-first_layer_channels: 64  # UNet 首层通道数，直接影响模型大小。First-layer channel count in UNet; directly affects model size.
+first_layer_channels: 64  # UNet 首层基础通道数，是主要模型规模控制旋钮之一。First-layer base channel count in UNet; one of the main model scaling knobs.
+blocks_per_stage: 1  # 每个 UNet stage 的 ResBlock 数；0 表示退回旧版 DoubleConv。Number of ResBlocks per UNet stage; 0 falls back to legacy DoubleConv.
 distributed: false  # 是否启用分布式训练。Whether to enable distributed training.
 model_path: null  # 预训练模型或断点权重路径，null 表示从头开始。Path to a pretrained model or checkpoint; null means train from scratch.
