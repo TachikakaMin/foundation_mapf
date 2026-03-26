@@ -24,6 +24,8 @@ sample_data_path:  # 训练中 inference test 使用的固定离线 .mbin 样本
   - data/online_eval_input_data/maze-64-64-10-1-75/maze-64-64-10-1-75-0-256.mbin
 inference_num_cases: 1  # 每次 inference test 运行的固定样本数量。Number of fixed sample cases evaluated in each inference test.
 inference_action_choice: max  # inference rollout 的动作选择策略，max 更稳定，sample 更随机。Action selection strategy for inference rollout; max is more stable while sample is more stochastic.
+inference_collision_shield: naive  # inference rollout 的冲突处理，naive 为原实现，cs_pibt 为论文里的 Collision Shield PIBT。Collision handling for inference rollout.
+cspibt_preference_type: sampled  # 仅在 cs_pibt 下生效；sampled 更贴近论文，sorted 是确定性消融。Only used with cs_pibt; sampled matches the paper more closely.
 num_workers: 20  # 统一worker数：在线模式下用于scenario producer进程，离线验证和sample也复用这个值。Unified worker count reused by online scenario producers, validation, and sample loading.
 
 # 优化。Optimization.

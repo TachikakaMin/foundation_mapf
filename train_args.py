@@ -197,6 +197,20 @@ def get_args():
         help="action selection used during inference test rollout",
     )
     parser.add_argument(
+        "--inference_collision_shield",
+        type=str,
+        choices=["naive", "cs_pibt"],
+        default="naive",
+        help="collision handling used during inference rollout",
+    )
+    parser.add_argument(
+        "--cspibt_preference_type",
+        type=str,
+        choices=["sampled", "sorted"],
+        default="sampled",
+        help="how CS-PIBT converts action probabilities into per-agent preference orders",
+    )
+    parser.add_argument(
         "--num_workers",
         "-nw",
         type=int,

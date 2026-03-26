@@ -14,6 +14,8 @@ sample_data_path:  # 训练中 inference test 使用的固定离线 .mbin 样本
 inference_num_cases: 1  # 每次 inference test 运行的固定样本数量。Number of fixed sample cases evaluated in each inference test.
 inference_test_interval: 0  # 离线模式下每隔多少个 epoch 跑一次 inference test，0 表示复用 eval_interval。Run inference test every N epochs in offline mode; 0 means reuse eval_interval.
 inference_action_choice: max  # inference rollout 的动作选择策略，max 更稳定，sample 更随机。Action selection strategy for inference rollout; max is more stable while sample is more stochastic.
+inference_collision_shield: naive  # inference rollout 的冲突处理，naive 为原实现，cs_pibt 为论文里的 Collision Shield PIBT。Collision handling for inference rollout.
+cspibt_preference_type: sampled  # 仅在 cs_pibt 下生效；sampled 更贴近论文，sorted 是确定性消融。Only used with cs_pibt; sampled matches the paper more closely.
 num_workers: 4  # 文件级 shuffle + 文件内顺序读取，HDD 友好。File-level shuffle + sequential read within files, HDD friendly.
 
 # 优化。Optimization.

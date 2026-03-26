@@ -408,6 +408,8 @@ def print_runtime_summary(
         ("num_workers", args.num_workers),
         ("inference_cases", args.inference_num_cases),
         ("inference_action", args.inference_action_choice),
+        ("inference_collision_shield", args.inference_collision_shield),
+        ("cspibt_preference_type", args.cspibt_preference_type),
         ("inference_steps", args.steps),
         ("estimated_total_train_steps", getattr(args, "estimated_total_train_steps", "unknown")),
         ("tensorboard_enabled", getattr(args, "tensorboard_enabled", "unknown")),
@@ -503,6 +505,8 @@ def run_inference_test(args, model, sample_loader, device, log_step, progress_la
                 device,
                 args.feature_type,
                 action_choice=args.inference_action_choice,
+                collision_shield=args.inference_collision_shield,
+                cspibt_preference_type=args.cspibt_preference_type,
                 steps=args.steps,
                 return_metrics=True,
             )
