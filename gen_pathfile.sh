@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # 检查必要的依赖
 if ! command -v parallel &> /dev/null; then
     echo "错误: 需要安装 GNU parallel"
@@ -24,8 +26,13 @@ mkdir -p data/path_files
 
 # 获取CPU核心数, 设置并行度
 CPU_CORES=$(nproc)
-PARALLEL_JOBS=$((CPU_CORES * 2))  # 使用2倍CPU核心数
-echo "检测到 $CPU_CORES 个CPU核心, 设置并行任务数: $PARALLEL_JOBS"
+RESERVED_CORES="${RESERVED_CORES:-2}"
+DEFAULT_PARALLEL_JOBS=$((CPU_CORES - RESERVED_CORES))
+if [ "$DEFAULT_PARALLEL_JOBS" -lt 1 ]; then
+    DEFAULT_PARALLEL_JOBS=1
+fi
+PARALLEL_JOBS="${PARALLEL_JOBS:-$DEFAULT_PARALLEL_JOBS}"
+echo "检测到 $CPU_CORES 个 CPU 核心, 预留核心数: $RESERVED_CORES, 设置并行任务数: $PARALLEL_JOBS"
 
 for map_file in data/map_files/maze-*/*.map; do
     # Extract the map pattern from the full path (e.g., maze-64-64-10-1-0.1)
@@ -55,5 +62,5 @@ for map_file in data/map_files/maze-*/*.map; do
         done
     done
 
-done | parallel --jobs $PARALLEL_JOBS --progress --bar --eta --timeout 5 --colsep ' ' \
+done | parallel --jobs "$PARALLEL_JOBS" --progress --bar --eta --timeout 5 --colsep ' ' \
     'data_generation_LACAM/lacam3/build/main -m data/map_files/{1}/{2}.map -N {3} -s {4} -v 1 -o data/path_files/{1}/{2}-{3}/{2}-{3}-{4}.path'

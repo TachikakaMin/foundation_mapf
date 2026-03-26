@@ -99,10 +99,16 @@ build_project() {
     echo -e "${GREEN}✅ 构建完成！${NC}"
     
     # 复制扩展文件到正确位置（如果存在）
-    if [ -f "extensions/construct_features_native"*.so ]; then
-        cp extensions/construct_features_native*.so ../extensions/
+    shopt -s nullglob
+    local extension_files=(
+        extensions/construct_features_native*.so
+        extensions/lacam_online_native*.so
+    )
+    if [ ${#extension_files[@]} -gt 0 ]; then
+        cp "${extension_files[@]}" ../extensions/
         echo -e "${GREEN}✅ C++扩展已复制到正确位置${NC}"
     fi
+    shopt -u nullglob
 }
 
 clean_project() {

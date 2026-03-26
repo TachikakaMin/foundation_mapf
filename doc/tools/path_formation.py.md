@@ -61,11 +61,13 @@
 - `total_time`
 - `throughput`
 
+当前实现会把这些指标整理成 Python 标量，方便直接打印和写入 TensorBoard。
+
 ### `generate_from_possible_targets(possible_positions, position)`
 
 从候选可通行位置里随机挑一个新目标，并保证不等于当前位置。这个函数只在 `lifelong=True` 时使用。
 
-### `path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None, lifelong=False)`
+### `path_formation(model, val_loader, idx, device, feature_type, action_choice="sample", steps=300, log_file=None, lifelong=False, return_metrics=False)`
 
 这是文件的核心接口。
 
@@ -85,6 +87,8 @@
 - `all_goal_locations`: 每一步所有智能体的目标
 - `metrics["final_distance"]`
 - `file_name`
+
+当 `return_metrics=True` 时，额外再返回完整 `metrics` 字典。
 
 ### `calculate_step_density(current_locations, map_data)`
 
@@ -117,12 +121,13 @@
 ```python
 from tools.path_formation import path_formation
 
-all_paths, all_goals, final_distance, file_name = path_formation(
+all_paths, all_goals, final_distance, file_name, metrics = path_formation(
     model=model,
     val_loader=val_loader,
     idx=0,
     device=device,
     feature_type="gradient",
     steps=300,
+    return_metrics=True,
 )
 ```

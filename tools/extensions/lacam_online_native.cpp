@@ -1,0 +1,285 @@
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include <numpy/arrayobject.h>
+
+#include <cstdint>
+#include <exception>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
+#include <lacam.hpp>
+#include <post_processing.hpp>
+
+namespace {
+
+// Graph 缓存：同一个 map 文件只读一次磁盘、建一次图
+// Graph cache: each map file is read from disk and built only once
+std::unordered_map<std::string, Graph*> g_graph_cache;
+std::mutex g_graph_cache_mutex;
+
+Graph* get_or_create_graph(const std::string& map_file) {
+    std::lock_guard<std::mutex> lock(g_graph_cache_mutex);
+    auto it = g_graph_cache.find(map_file);
+    if (it != g_graph_cache.end()) return it->second;
+    auto* g = new Graph(map_file);
+    g_graph_cache[map_file] = g;
+    return g;
+}
+
+uint8_t encode_action(int64_t cur_row, int64_t cur_col, int64_t next_row, int64_t next_col) {
+    const int64_t dr = next_row - cur_row;
+    const int64_t dc = next_col - cur_col;
+
+    if (dr == 0 && dc == 1) {
+        return 1;
+    }
+    if (dr == 0 && dc == -1) {
+        return 2;
+    }
+    if (dr == -1 && dc == 0) {
+        return 3;
+    }
+    if (dr == 1 && dc == 0) {
+        return 4;
+    }
+    return 0;
+}
+
+void decref_and_null(PyObject*& obj) {
+    Py_XDECREF(obj);
+    obj = nullptr;
+}
+
+}  // namespace
+
+static PyObject* generate_lacam_solution_cpp(PyObject* self, PyObject* args, PyObject* kwargs) {
+    (void)self;
+    const char* map_file_cstr = nullptr;
+    int agent_num = 0;
+    int seed = 0;
+    int time_limit_sec = 2;
+    int verbose = 0;
+
+    static const char* kwlist[] = {
+        "map_file",
+        "agent_num",
+        "seed",
+        "time_limit_sec",
+        "verbose",
+        nullptr,
+    };
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args,
+            kwargs,
+            "sii|ii",
+            const_cast<char**>(kwlist),
+            &map_file_cstr,
+            &agent_num,
+            &seed,
+            &time_limit_sec,
+            &verbose)) {
+        return nullptr;
+    }
+
+    if (agent_num <= 0) {
+        PyErr_SetString(PyExc_ValueError, "agent_num must be > 0");
+        return nullptr;
+    }
+    if (time_limit_sec <= 0) {
+        PyErr_SetString(PyExc_ValueError, "time_limit_sec must be > 0");
+        return nullptr;
+    }
+
+    try {
+        const std::string map_file(map_file_cstr);
+
+        // 使用缓存的 Graph，避免每次从磁盘读文件
+        // Use cached Graph to avoid reading from disk every call
+        Graph* cached_graph = get_or_create_graph(map_file);
+
+        // 用缓存的 Graph 随机生成 starts/goals（复刻 Instance(map_file, N, seed) 的逻辑）
+        // Randomly generate starts/goals using cached Graph (mirrors Instance(map_file, N, seed))
+        const int K = cached_graph->size();
+        auto MT = std::mt19937(seed);
+
+        Config cfg_starts, cfg_goals;
+        {
+            auto s_indexes = std::vector<int>(K);
+            std::iota(s_indexes.begin(), s_indexes.end(), 0);
+            std::shuffle(s_indexes.begin(), s_indexes.end(), MT);
+            for (int i = 0; i < K && static_cast<int>(cfg_starts.size()) < agent_num; ++i) {
+                cfg_starts.push_back(cached_graph->V[s_indexes[i]]);
+            }
+        }
+        {
+            auto g_indexes = std::vector<int>(K);
+            std::iota(g_indexes.begin(), g_indexes.end(), 0);
+            std::shuffle(g_indexes.begin(), g_indexes.end(), MT);
+            for (int i = 0; i < K && static_cast<int>(cfg_goals.size()) < agent_num; ++i) {
+                cfg_goals.push_back(cached_graph->V[g_indexes[i]]);
+            }
+        }
+
+        const Instance ins(cached_graph, cfg_starts, cfg_goals, static_cast<uint>(agent_num));
+        if (!ins.is_valid(0)) {
+            PyErr_SetString(PyExc_RuntimeError, "Invalid MAPF instance for the given map/agent_num");
+            return nullptr;
+        }
+
+        // 关闭 FLG_STAR，找到第一个可行解就停止，不继续优化
+        // Disable FLG_STAR: stop at first feasible solution, skip refinement
+        // 对比测试：128 agents makespan 57.6 vs 53.5 (+7.5%)，速度快 34x
+        //          64 agents makespan 50.3 vs 48.7 (+3.3%)，速度快 87x
+        //          32 agents 及以下差异 <1%
+        Planner::FLG_STAR = false;
+
+        const Deadline deadline(static_cast<double>(time_limit_sec) * 1000.0);
+        Solution solution;
+        bool feasible = false;
+        PyThreadState* thread_state = nullptr;
+        try {
+            thread_state = PyEval_SaveThread();
+            solution = solve(ins, verbose - 1, &deadline, seed);
+            feasible = !solution.empty() && is_feasible_solution(ins, solution, 0);
+            PyEval_RestoreThread(thread_state);
+            thread_state = nullptr;
+        } catch (...) {
+            if (thread_state != nullptr) {
+                PyEval_RestoreThread(thread_state);
+                thread_state = nullptr;
+            }
+            throw;
+        }
+
+        if (solution.empty()) {
+            PyErr_SetString(PyExc_RuntimeError, "LACAM failed to find a solution");
+            return nullptr;
+        }
+        if (!feasible) {
+            PyErr_SetString(PyExc_RuntimeError, "LACAM returned an infeasible solution");
+            return nullptr;
+        }
+
+        const npy_intp steps = static_cast<npy_intp>(solution.size());
+        const npy_intp n_agents = static_cast<npy_intp>(ins.N);
+
+        PyObject* positions_obj = nullptr;
+        PyObject* actions_obj = nullptr;
+        PyObject* goals_obj = nullptr;
+        PyObject* result = nullptr;
+        PyObject* steps_obj = nullptr;
+        PyObject* agent_num_obj = nullptr;
+
+        npy_intp pos_dims[3] = {steps, n_agents, 2};
+        npy_intp act_dims[2] = {steps, n_agents};
+        npy_intp goals_dims[2] = {n_agents, 2};
+
+        positions_obj = PyArray_SimpleNew(3, pos_dims, NPY_INT64);
+        actions_obj = PyArray_SimpleNew(2, act_dims, NPY_UINT8);
+        goals_obj = PyArray_SimpleNew(2, goals_dims, NPY_INT64);
+
+        if (!positions_obj || !actions_obj || !goals_obj) {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to allocate numpy arrays");
+            decref_and_null(positions_obj);
+            decref_and_null(actions_obj);
+            decref_and_null(goals_obj);
+            return nullptr;
+        }
+
+        auto* positions = reinterpret_cast<int64_t*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(positions_obj)));
+        auto* actions = reinterpret_cast<uint8_t*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(actions_obj)));
+        auto* goals = reinterpret_cast<int64_t*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(goals_obj)));
+
+        for (npy_intp i = 0; i < n_agents; ++i) {
+            const auto* goal_vertex = ins.goals[static_cast<size_t>(i)];
+            goals[i * 2 + 0] = static_cast<int64_t>(goal_vertex->y);
+            goals[i * 2 + 1] = static_cast<int64_t>(goal_vertex->x);
+        }
+
+        for (npy_intp t = 0; t < steps; ++t) {
+            const auto& config = solution[static_cast<size_t>(t)];
+            const auto& next_config = solution[static_cast<size_t>((t + 1 < steps) ? (t + 1) : t)];
+            for (npy_intp i = 0; i < n_agents; ++i) {
+                const auto* cur_v = config[static_cast<size_t>(i)];
+                const auto* next_v = next_config[static_cast<size_t>(i)];
+
+                const int64_t cur_row = static_cast<int64_t>(cur_v->y);
+                const int64_t cur_col = static_cast<int64_t>(cur_v->x);
+                const int64_t next_row = static_cast<int64_t>(next_v->y);
+                const int64_t next_col = static_cast<int64_t>(next_v->x);
+
+                const npy_intp pos_base = (t * n_agents + i) * 2;
+                positions[pos_base + 0] = cur_row;
+                positions[pos_base + 1] = cur_col;
+                actions[t * n_agents + i] = encode_action(cur_row, cur_col, next_row, next_col);
+            }
+        }
+
+        result = PyDict_New();
+        if (!result) {
+            decref_and_null(positions_obj);
+            decref_and_null(actions_obj);
+            decref_and_null(goals_obj);
+            return nullptr;
+        }
+
+        steps_obj = PyLong_FromLongLong(static_cast<long long>(steps));
+        agent_num_obj = PyLong_FromLongLong(static_cast<long long>(n_agents));
+        if (!steps_obj || !agent_num_obj) {
+            Py_DECREF(result);
+            decref_and_null(positions_obj);
+            decref_and_null(actions_obj);
+            decref_and_null(goals_obj);
+            decref_and_null(steps_obj);
+            decref_and_null(agent_num_obj);
+            return nullptr;
+        }
+
+        if (PyDict_SetItemString(result, "positions", positions_obj) != 0 ||
+            PyDict_SetItemString(result, "actions", actions_obj) != 0 ||
+            PyDict_SetItemString(result, "goals", goals_obj) != 0 ||
+            PyDict_SetItemString(result, "steps", steps_obj) != 0 ||
+            PyDict_SetItemString(result, "agent_num", agent_num_obj) != 0) {
+            Py_DECREF(result);
+            decref_and_null(positions_obj);
+            decref_and_null(actions_obj);
+            decref_and_null(goals_obj);
+            decref_and_null(steps_obj);
+            decref_and_null(agent_num_obj);
+            return nullptr;
+        }
+
+        decref_and_null(positions_obj);
+        decref_and_null(actions_obj);
+        decref_and_null(goals_obj);
+        decref_and_null(steps_obj);
+        decref_and_null(agent_num_obj);
+        return result;
+    } catch (const std::exception& e) {
+        PyErr_Format(PyExc_RuntimeError, "LACAM generation failed: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        PyErr_SetString(PyExc_RuntimeError, "LACAM generation failed with unknown exception");
+        return nullptr;
+    }
+}
+
+static PyMethodDef module_methods[] = {
+    {"generate_lacam_solution_cpp", reinterpret_cast<PyCFunction>(generate_lacam_solution_cpp), METH_VARARGS | METH_KEYWORDS, "Generate one MAPF scenario using LACAM and return numpy arrays."},
+    {nullptr, nullptr, 0, nullptr}
+};
+
+static struct PyModuleDef module_definition = {
+    PyModuleDef_HEAD_INIT,
+    "lacam_online_native",
+    "Native C++ online MAPF scenario generation via LACAM",
+    -1,
+    module_methods
+};
+
+PyMODINIT_FUNC PyInit_lacam_online_native(void) {
+    import_array();
+    return PyModule_Create(&module_definition);
+}

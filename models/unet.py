@@ -2,27 +2,33 @@
 
 from .unet_util import *
 
+
 class UNet(nn.Module):
     """最小能处理的输入尺寸为 16*16
+    blocks_per_stage: 每个 stage 的 ResBlock 数量，0 则退化为原始 DoubleConv
     """
-    def __init__(self, n_channels, n_classes, first_layer_channels=64, bilinear=False):
+    def __init__(self, n_channels, n_classes, first_layer_channels=64, bilinear=False, blocks_per_stage=1):
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
+        C = first_layer_channels
         factor = 2 if bilinear else 1
+        B = blocks_per_stage
 
-        self.input_conv = (DoubleConv(n_channels, first_layer_channels))
-        self.down1 = (Down(first_layer_channels, first_layer_channels*2))
-        self.down2 = (Down(first_layer_channels*2, first_layer_channels*4))
-        self.down3 = (Down(first_layer_channels*4, first_layer_channels*8))
-        self.down4 = (Down(first_layer_channels*8, first_layer_channels*16 // factor))
-        self.up1 = (Up(first_layer_channels*16, first_layer_channels*8 // factor, bilinear))
-        self.up2 = (Up(first_layer_channels*8, first_layer_channels*4 // factor, bilinear))
-        self.up3 = (Up(first_layer_channels*4, first_layer_channels*2 // factor, bilinear))
-        self.up4 = (Up(first_layer_channels*2, first_layer_channels, bilinear))
-        self.output_conv = (OutConv(first_layer_channels, n_classes))
-        # 将模型的输出转换为概率分布
+        if B > 0:
+            self.input_conv = ResStage(n_channels, C, B)
+        else:
+            self.input_conv = DoubleConv(n_channels, C)
+        self.down1 = Down(C, C * 2, B)
+        self.down2 = Down(C * 2, C * 4, B)
+        self.down3 = Down(C * 4, C * 8, B)
+        self.down4 = Down(C * 8, C * 16 // factor, B)
+        self.up1 = Up(C * 16, C * 8 // factor, bilinear, B)
+        self.up2 = Up(C * 8, C * 4 // factor, bilinear, B)
+        self.up3 = Up(C * 4, C * 2 // factor, bilinear, B)
+        self.up4 = Up(C * 2, C, bilinear, B)
+        self.output_conv = OutConv(C, n_classes)
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
@@ -40,11 +46,6 @@ class UNet(nn.Module):
         return logits, prob
 
     def use_checkpointing(self):
-        """checkpoint通过在前向传播过程中
-           保存某些关键的激活值, 而不是保存所有中间层的激活值。
-           这样, 在反向传播时, 需要重新计算那些未保存的激活值。
-           尽管增加了计算开销（因为有些前向计算需要重新执行）, 但节省了大量的显存
-        """
         self.input_conv = torch.utils.checkpoint(self.input_conv)
         self.down1 = torch.utils.checkpoint(self.down1)
         self.down2 = torch.utils.checkpoint(self.down2)

@@ -42,6 +42,11 @@
 4. 执行 `make -j$(nproc)`
 5. 如果扩展 `.so` 存在，则复制回 `tools/extensions/`
 
+当前会复制两类扩展：
+
+- `construct_features_native*.so`
+- `lacam_online_native*.so`
+
 ### `clean_project()`
 
 清理：
@@ -85,6 +90,7 @@
 - `tools/convert_path_to_mbin`
 - `tools/build/`
 - `tools/extensions/construct_features_native*.so`
+- `tools/extensions/lacam_online_native*.so`
 
 ## 用法
 

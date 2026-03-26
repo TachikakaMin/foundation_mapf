@@ -8,7 +8,7 @@
 
 ## 类与方法
 
-### `UNet(n_channels, n_classes, first_layer_channels=64, bilinear=False)`
+### `UNet(n_channels, n_classes, first_layer_channels=64, bilinear=False, blocks_per_stage=1)`
 
 构造完整 U-Net：
 
@@ -31,8 +31,21 @@
 
 - `n_channels`: 输入通道数
 - `n_classes`: 动作类别数
-- `first_layer_channels`: 第一层基础通道数
+- `first_layer_channels`: 第一层基础通道数，是主要模型规模控制旋钮之一
 - `bilinear`: 是否用双线性上采样替代反卷积
+- `blocks_per_stage`: 每个 stage 的 `ResBlock` 数；`0` 时退回旧版 `DoubleConv`
+
+当前结构约定：
+
+- `blocks_per_stage > 0` 时，`input_conv` / `Down` / `Up` 都会使用 `ResStage`
+- `blocks_per_stage == 0` 时，模型退回兼容旧版的 `DoubleConv` 风格 U-Net
+
+因此现在的 UNet 同时支持：
+
+- 改宽：调 `first_layer_channels`
+- 改深：调 `blocks_per_stage`
+
+这两个参数也是 `scaling_law.py` 里默认扫描的模型大小轴。
 
 ### `UNet.forward(x)`
 
@@ -51,6 +64,8 @@
 
 所有子模块都来自 [models/unet_util.py](/home/yimin/research/RAILGUN/models/unet_util.py)：
 
+- `ResBlock`
+- `ResStage`
 - `DoubleConv`
 - `Down`
 - `Up`
@@ -65,6 +80,12 @@
 ```python
 from models.unet import UNet
 
-model = UNet(n_channels=6, n_classes=5, first_layer_channels=64, bilinear=False)
+model = UNet(
+    n_channels=6,
+    n_classes=5,
+    first_layer_channels=64,
+    bilinear=False,
+    blocks_per_stage=1,
+)
 logits, prob = model(x)
 ```

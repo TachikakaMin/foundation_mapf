@@ -73,13 +73,13 @@ def construct_input_feature(
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
-                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
+                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
                 if ((agent_locations == up_position).all(dim=1)).any():
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
-                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
+                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
                 if ((agent_locations == down_position).all(dim=1)).any():
                     down_distances = NOT_FOUND_PATH
@@ -143,13 +143,13 @@ def construct_input_feature(
                     right_distances = NOT_FOUND_PATH
                 delta_right_distances = right_distances - distances[i]
 
-                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
+                up_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
                 up_distances = get_distance(distance_map, up_position, goal_locations[i])
                 if ((agent_locations == up_position).all(dim=1)).any():
                     up_distances = NOT_FOUND_PATH
                 delta_up_distances = up_distances - distances[i]
 
-                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] - 1], device=device)
+                down_position = torch.tensor([agent_locations[i, 0], agent_locations[i, 1] + 1], device=device)
                 down_distances = get_distance(distance_map, down_position, goal_locations[i])
                 if ((agent_locations == down_position).all(dim=1)).any():
                     down_distances = NOT_FOUND_PATH
@@ -203,8 +203,21 @@ def construct_input_feature(
     return input_features
 
 
+def _infer_data_root(file_name):
+    normalized = os.path.normpath(file_name)
+    parts = normalized.split(os.sep)
+    if "data" in parts:
+        data_idx = parts.index("data")
+        prefix_parts = [part for part in parts[: data_idx + 1] if part]
+        prefix = os.path.join(*prefix_parts) if prefix_parts else "data"
+        if os.path.isabs(normalized):
+            return os.path.join(os.sep, prefix)
+        return prefix
+    return file_name.split("/")[0]
+
+
 def parse_file_name(file_name):
-    dir_prefix = file_name.split("/")[0]
+    dir_prefix = _infer_data_root(file_name)
     path_name = os.path.basename(file_name).split(".")[0]
     if "mapf_gpt" in file_name:
         dir_prefix_2 = file_name.split("/")[2]
@@ -308,7 +321,7 @@ def create_distance_map(map_data):
     # num_processes = multiprocessing.cpu_count()
     
     # 创建进程池并执行并行计算
-    with Pool(processes=1) as pool:
+    with Pool(processes=None) as pool:
         results = list(tqdm(
             pool.imap(calculate_single_point_distances, args),
             total=len(accessible_points),

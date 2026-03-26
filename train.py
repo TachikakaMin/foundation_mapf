@@ -1,128 +1,1216 @@
-import os
-import torch
-import torch.nn as nn
-from datetime import datetime
-from torch.utils.data import DataLoader
-import numpy as np
-from tqdm import tqdm
-from train_args import get_args
-from models.unet import UNet
-from models.CNN import CNN
-from MAPF_dataset_mbin import MAPFDataset
-from tools.path_formation import path_formation
-from torch.utils.tensorboard import SummaryWriter
-import random
 import glob
+import inspect
+import os
+import random
+import sys
+import time
+from datetime import datetime
+
+import numpy as np
+import torch
 import torch.distributed as dist
+import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-import psutil  # Add this import
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from MAPF_dataset_mbin import MAPFDataset
+from models.CNN import CNN
+from models.unet import UNet
+from tools.path_formation import path_formation
+from train_args import get_args
 
 
-def evaluate_valid_loss(model, val_loader, loss_fn, device):
-    # Set model to evaluation mode
+class NullSummaryWriter:
+    def add_scalar(self, *args, **kwargs):
+        return None
+
+    def add_text(self, *args, **kwargs):
+        return None
+
+    def add_video(self, *args, **kwargs):
+        return None
+
+    def flush(self):
+        return None
+
+    def close(self):
+        return None
+
+
+def get_map_dims(file_path):
+    parts = os.path.basename(file_path).split("-")
+    if len(parts) < 3:
+        raise ValueError(f"Cannot parse map dims from file name: {file_path}")
+    return int(parts[1]), int(parts[2])
+
+
+def group_files_by_dims(file_paths, min_map_size=32):
+    dimension_groups = {}
+    for file_path in sorted(file_paths):
+        try:
+            dims = get_map_dims(file_path)
+        except Exception:
+            continue
+        if dims[0] < min_map_size or dims[1] < min_map_size:
+            continue
+        dimension_groups.setdefault(dims, []).append(file_path)
+    return dimension_groups
+
+
+def create_offline_validation_loaders(args):
+    val_root = args.val_dataset_path if args.val_dataset_path else args.dataset_path
+    val_mbin_files = sorted(glob.glob(os.path.join(val_root, "**/*.mbin"), recursive=True))
+    if not val_mbin_files:
+        raise RuntimeError(f"❌ 未找到验证集.mbin文件: {val_root}")
+
+    dimension_groups = group_files_by_dims(val_mbin_files, min_map_size=32)
+    if not dimension_groups:
+        raise RuntimeError("❌ 验证集中没有找到合适大小(>=32x32)的地图数据")
+
+    val_loaders = {}
+    selected_val_files = []
+    use_all_validation_files = args.val_dataset_path is not None
+
+    for dims, files in dimension_groups.items():
+        if use_all_validation_files:
+            val_list = files
+        else:
+            n_val = int(0.1 * len(files))
+            if n_val <= 0:
+                if args.local_rank == 0:
+                    print(f"跳过验证分组 {dims}, 文件太少: {len(files)}")
+                continue
+            val_list = files[:n_val]
+        selected_val_files.extend(val_list)
+
+        val_data = MAPFDataset(val_list, args.feature_dim, args.feature_type)
+        val_sampler = (
+            torch.utils.data.distributed.DistributedSampler(val_data, shuffle=False)
+            if args.distributed
+            else None
+        )
+        val_loaders[dims] = DataLoader(
+            val_data,
+            **make_dataloader_kwargs(
+                args.batch_size,
+                args.num_workers,
+                sampler=val_sampler,
+            ),
+        )
+
+    if not val_loaders:
+        raise RuntimeError("❌ 未能创建任何有效验证DataLoader")
+
+    return val_loaders, selected_val_files
+
+
+def create_offline_train_loaders(args):
+    mbin_files = sorted(glob.glob(os.path.join(args.dataset_path, "**/*.mbin"), recursive=True))
+    if not mbin_files:
+        raise RuntimeError("❌ 未找到.mbin文件, 请先运行数据转换")
+
+    dimension_groups = group_files_by_dims(mbin_files, min_map_size=32)
+    if not dimension_groups:
+        raise RuntimeError("❌ 没有找到合适大小(>=32x32)的训练数据")
+
+    train_loaders = {}
+    train_loader_weights = {}
+
+    # step-based 优先做“文件级 shuffle + 文件内顺序读取”
+    # 这样既保留不同 .mbin 文件之间的随机性，又避免文件内 step 级随机 seek
+    use_step_based = args.offline_total_steps > 0
+    use_file_order_shuffle = use_step_based and not args.distributed
+    should_shuffle = use_step_based and not use_file_order_shuffle
+    if use_file_order_shuffle:
+        should_shuffle = False
+        if args.local_rank == 0:
+            print(
+                "Offline step-based: shuffle across files, keep sequential order "
+                "within each .mbin to preserve disk locality."
+            )
+
+    for dims, files in dimension_groups.items():
+        n_test = int(0.1 * len(files))
+        train_list = list(files[n_test:])
+        if not train_list:
+            if args.local_rank == 0:
+                print(f"跳过训练分组 {dims}, 可用训练文件为0")
+            continue
+
+        if use_file_order_shuffle:
+            file_rng = random.Random(
+                args.seed + args.local_rank * 1000003 + dims[0] * 1009 + dims[1] * 9173
+            )
+            file_rng.shuffle(train_list)
+
+        train_data = MAPFDataset(train_list, args.feature_dim, args.feature_type)
+        train_sampler = (
+            torch.utils.data.distributed.DistributedSampler(train_data, shuffle=should_shuffle)
+            if args.distributed
+            else None
+        )
+        train_loader = DataLoader(
+            train_data,
+            **make_dataloader_kwargs(
+                args.batch_size,
+                args.num_workers,
+                sampler=train_sampler,
+                shuffle=should_shuffle if train_sampler is None else False,
+            ),
+        )
+        train_loaders[dims] = train_loader
+        train_loader_weights[dims] = len(train_list)
+
+        if args.local_rank == 0:
+            print(f"Offline train group {dims}: {len(train_list)} files")
+
+    if not train_loaders:
+        raise RuntimeError("❌ 未能创建任何有效训练DataLoader")
+
+    return train_loaders, train_loader_weights
+
+
+def _filter_constructor_kwargs(constructor, kwargs):
+    target = constructor
+    if inspect.isclass(constructor):
+        target = constructor.__init__
+
+    signature = inspect.signature(target)
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return kwargs
+    return {key: value for key, value in kwargs.items() if key in signature.parameters}
+
+
+def create_online_train_loaders(args):
+    from MAPF_online_dataset import MAPFOnlineBufferLoader
+
+    map_files = sorted(glob.glob(os.path.join(args.train_map_path, "**/*.map"), recursive=True))
+    if not map_files:
+        raise RuntimeError(f"❌ 未找到在线训练地图文件: {args.train_map_path}")
+
+    dimension_groups = group_files_by_dims(map_files, min_map_size=32)
+    if not dimension_groups:
+        raise RuntimeError("❌ 在线训练地图中没有合适大小(>=32x32)的地图")
+
+    train_loaders = {}
+    train_loader_weights = {}
+
+    for dims, files in dimension_groups.items():
+        loader_kwargs = {
+            "batch_size": args.batch_size,
+            "time_limit_sec": args.online_time_limit_sec,
+            "retry_limit": args.online_retry_limit,
+            "seed": args.seed + args.local_rank * 1000003,
+            "buffer_size": args.online_buffer_size,
+            "buffer_workers": args.num_workers,
+            "buffer_timeout_sec": args.online_buffer_timeout_sec,
+        }
+        loader_kwargs = _filter_constructor_kwargs(MAPFOnlineBufferLoader, loader_kwargs)
+        train_loader = MAPFOnlineBufferLoader(
+            files,
+            args.feature_dim,
+            args.feature_type,
+            **loader_kwargs,
+        )
+        train_loader.start()
+        train_loaders[dims] = train_loader
+        pair_weight = sum(getattr(pair, "weight", 0) for pair in getattr(train_loader, "pair_configs", []))
+        train_loader_weights[dims] = pair_weight if pair_weight > 0 else len(files)
+
+        if args.local_rank == 0:
+            print(
+                f"Online train group {dims}: {len(files)} maps, "
+                f"sampling_weight={train_loader_weights[dims]}, "
+                f"step_buffer={args.online_buffer_size}, "
+                f"workers={args.num_workers}"
+            )
+
+    if not train_loaders:
+        raise RuntimeError("❌ 未能创建任何有效在线训练DataLoader")
+
+    return train_loaders, train_loader_weights
+
+
+def get_online_schedule(args):
+    schedule = {
+        "total_steps": int(args.online_total_steps),
+        "eval_interval_steps": int(args.online_eval_interval_steps),
+        "save_interval_steps": int(args.online_save_interval_steps),
+        "inference_interval_steps": int(args.online_inference_test_interval_steps),
+    }
+
+    if schedule["total_steps"] <= 0:
+        raise ValueError("--online_total_steps 必须大于 0")
+    if schedule["eval_interval_steps"] <= 0:
+        raise ValueError("--online_eval_interval_steps 必须大于 0")
+    if schedule["save_interval_steps"] <= 0:
+        raise ValueError("--online_save_interval_steps 必须大于 0")
+    if schedule["inference_interval_steps"] <= 0:
+        raise ValueError("--online_inference_test_interval_steps 必须大于 0")
+
+    return schedule
+
+
+def get_offline_schedule(args):
+    """获取 offline step-based 训练的调度配置"""
+    schedule = {
+        "total_steps": int(args.offline_total_steps),
+        "eval_interval_steps": int(args.offline_eval_interval_steps),
+        "save_interval_steps": int(args.offline_save_interval_steps),
+        "inference_interval_steps": int(args.offline_inference_test_interval_steps),
+    }
+
+    if schedule["total_steps"] <= 0:
+        raise ValueError("--offline_total_steps 必须大于 0")
+    if schedule["eval_interval_steps"] <= 0:
+        raise ValueError("--offline_eval_interval_steps 必须大于 0")
+    if schedule["save_interval_steps"] <= 0:
+        raise ValueError("--offline_save_interval_steps 必须大于 0")
+    if schedule["inference_interval_steps"] <= 0:
+        raise ValueError("--offline_inference_test_interval_steps 必须大于 0")
+
+    return schedule
+
+
+def get_model_stats(model):
+    module = model.module if isinstance(model, DDP) else model
+    total_params = sum(p.numel() for p in module.parameters() if p.requires_grad)
+    model_memory_mb = total_params * 4 / (1024**2)
+    return total_params, model_memory_mb
+
+
+def format_kv_table(rows):
+    if not rows:
+        return ""
+    key_width = max(len(str(key)) for key, _ in rows)
+    return "\n".join(f"{str(key):<{key_width}} : {value}" for key, value in rows)
+
+
+def format_args_text(args):
+    rows = []
+    for key in sorted(vars(args)):
+        if key == "writer":
+            continue
+        rows.append(f"{key}: {getattr(args, key)}")
+    return "\n".join(rows)
+
+
+def estimate_total_train_steps(args, train_loaders):
+    if args.dataset_mode == "online":
+        return int(args.online_total_steps)
+    return int(sum(len(loader) for loader in train_loaders.values()) * args.epochs)
+
+
+def setup_run_logging(args, total_train_steps):
+    args.estimated_total_train_steps = total_train_steps
+    args.tensorboard_enabled = total_train_steps >= 1000
+    args.writer = NullSummaryWriter()
+
+    if args.local_rank != 0:
+        return
+
+    os.makedirs(args.real_log_dir, exist_ok=True)
+    args_text = format_args_text(args)
+    print(args_text)
+
+    if not args.tensorboard_enabled:
+        print(
+            f"TensorBoard disabled: estimated_total_train_steps={total_train_steps} < 1000"
+        )
+        return
+
+    args.writer = SummaryWriter(log_dir=args.real_log_dir)
+    args.writer.add_text("Args", f"```text\n{args_text}\n```", 0)
+
+
+def summarize_loader_groups(loaders, weights=None):
+    if not loaders:
+        return "none"
+    parts = []
+    for dims in sorted(loaders):
+        text = f"{dims[0]}x{dims[1]}"
+        if weights is not None:
+            text = f"{text} (weight={weights.get(dims, 0)})"
+        parts.append(text)
+    return ", ".join(parts)
+
+
+def make_dataloader_kwargs(batch_size, num_workers, *, sampler=None, shuffle=False):
+    kwargs = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "shuffle": shuffle,
+    }
+    if sampler is not None:
+        kwargs["sampler"] = sampler
+        kwargs.pop("shuffle", None)
+    if num_workers > 0:
+        kwargs["persistent_workers"] = True
+        kwargs["prefetch_factor"] = 2
+    if torch.cuda.is_available():
+        kwargs["pin_memory"] = True
+    return kwargs
+
+
+def close_loader_collection(loaders):
+    if not isinstance(loaders, dict):
+        return
+    for loader in loaders.values():
+        close_fn = getattr(loader, "close", None)
+        if callable(close_fn):
+            close_fn()
+
+
+def print_runtime_summary(
+    args,
+    model,
+    device,
+    train_loaders,
+    train_loader_weights,
+    val_loaders,
+    sample_paths=None,
+    online_schedule=None,
+):
+    if args.local_rank != 0:
+        return
+
+    total_params, model_memory_mb = get_model_stats(model)
+    rows = [
+        ("config_source", getattr(args, "config_source", "CLI only")),
+        ("run_timestamp", args.current_time),
+        ("run_dir", args.real_log_dir),
+        ("device", device),
+        ("dataset_mode", args.dataset_mode),
+        ("train_data", args.train_map_path if args.dataset_mode == "online" else args.dataset_path),
+        ("val_data", args.val_dataset_path if args.val_dataset_path else args.dataset_path),
+        ("train_groups", summarize_loader_groups(train_loaders, train_loader_weights)),
+        ("val_groups", summarize_loader_groups(val_loaders)),
+        ("model", args.model),
+        ("feature", f"dim={args.feature_dim}, type={args.feature_type}, action_dim={args.action_dim}"),
+        ("model_params", total_params),
+        ("model_size_mb", f"{model_memory_mb:.2f}"),
+        ("batch_size", args.batch_size),
+        ("lr", args.lr),
+        ("weight_decay", args.weight_decay),
+        (
+            "lr_scheduler",
+            (
+                f"step(step_size={args.lr_decay_step_size}, gamma={args.lr_decay_gamma})"
+                if args.lr_decay_step_size > 0 and args.lr_decay_gamma < 1.0
+                else "none"
+            ),
+        ),
+        ("num_workers", args.num_workers),
+        ("inference_cases", args.inference_num_cases),
+        ("inference_action", args.inference_action_choice),
+        ("inference_collision_shield", args.inference_collision_shield),
+        ("cspibt_preference_type", args.cspibt_preference_type),
+        ("inference_steps", args.steps),
+        ("estimated_total_train_steps", getattr(args, "estimated_total_train_steps", "unknown")),
+        ("tensorboard_enabled", getattr(args, "tensorboard_enabled", "unknown")),
+    ]
+    if sample_paths:
+        rows.append(("inference_samples", ", ".join(os.path.basename(path) for path in sample_paths)))
+    if args.dataset_mode == "online":
+        rows.extend(
+            [
+                ("progress_unit", "optimizer_steps"),
+                ("online_total_steps", online_schedule["total_steps"]),
+                ("online_eval_interval_steps", online_schedule["eval_interval_steps"]),
+                ("online_save_interval_steps", online_schedule["save_interval_steps"]),
+                ("online_inference_interval_steps", online_schedule["inference_interval_steps"]),
+                ("estimated_train_samples", online_schedule["total_steps"] * args.batch_size),
+                ("online_time_limit_sec", args.online_time_limit_sec),
+                ("online_retry_limit", args.online_retry_limit),
+                ("online_buffer_size", args.online_buffer_size),
+                ("online_buffer_timeout_sec", args.online_buffer_timeout_sec),
+                ("online_buffer_unit", "steps_per_dim_group"),
+            ]
+        )
+    else:
+        inference_interval = args.inference_test_interval if args.inference_test_interval > 0 else args.eval_interval
+        rows.extend(
+            [
+                ("progress_unit", "epochs"),
+                ("epochs", args.epochs),
+                ("eval_interval", args.eval_interval),
+                ("save_interval", args.save_interval),
+                ("inference_interval", inference_interval),
+            ]
+        )
+
+    summary = format_kv_table(rows)
+    print("=== Runtime Config ===")
+    print(summary)
+    args.writer.add_text("RuntimeConfig", f"```text\n{summary}\n```", 0)
+
+
+def evaluate_valid_loss(args, model, val_loader, loss_fn, device):
     model.eval()
-    val_loss = 0
-    total_agents = 0  # Add step counter
+    val_loss = 0.0
+    total_agents = 0
 
-    with torch.no_grad():  # Disable gradient calculation
-        for batch in tqdm(val_loader, desc="Evaluating", disable=args.local_rank!=0):
-            # Load validation data onto the correct device (CPU/GPU)
+    with torch.no_grad():
+        for batch in tqdm(val_loader, desc="Evaluating", disable=args.local_rank != 0):
             feature = batch["feature"].to(device)
             action_y = batch["action"].to(device)
             mask = batch["mask"].to(device)
-            # Forward pass
-            logits, _ = model(feature)
 
-            # Compute the loss and apply mask
+            logits, _ = model(feature)
             loss = loss_fn(logits, action_y)
             masked_loss = loss * mask.float()
             val_loss += masked_loss.detach().sum().item()
-            total_agents += mask.detach().sum().item()  # Increment agent counter
+            total_agents += mask.detach().sum().item()
 
-    return val_loss / total_agents  # Average the loss by total agents
+    if total_agents == 0:
+        return float("inf")
+    return val_loss / total_agents
 
-def train(args, model, train_loaders, val_loaders, sample_loader, optimizer, loss_fn, device):
+
+def run_validation(args, model, val_loaders, loss_fn, device, log_step, progress_label):
+    val_losses = []
+    for dims, val_loader in val_loaders.items():
+        val_loss = evaluate_valid_loss(args, model, val_loader, loss_fn, device)
+        val_losses.append(val_loss)
+        if args.local_rank == 0:
+            args.writer.add_scalar(f"Loss/Val_{dims[0]}x{dims[1]}", val_loss, log_step)
+            print(
+                f"{progress_label}, Validation mean Loss "
+                f"[{dims[0]}x{dims[1]}]: {val_loss}"
+            )
+
+    if args.local_rank == 0 and val_losses:
+        aggregated_val_loss = float(sum(val_losses) / len(val_losses))
+        args.writer.add_scalar("Loss/Val", aggregated_val_loss, log_step)
+        print(f"{progress_label}, Validation mean Loss (aggregated): {aggregated_val_loss}")
+
+
+def run_inference_test(args, model, sample_loader, device, log_step, progress_label):
+    if args.local_rank != 0 or sample_loader is None:
+        return
+
+    metrics_list = []
+    sample_count = len(sample_loader.dataset)
+    for idx in range(sample_count):
+        try:
+            all_paths, all_goal_locations, _, file_name, metrics = path_formation(
+                model,
+                sample_loader,
+                idx,
+                device,
+                args.feature_type,
+                action_choice=args.inference_action_choice,
+                collision_shield=args.inference_collision_shield,
+                cspibt_preference_type=args.cspibt_preference_type,
+                steps=args.steps,
+                return_metrics=True,
+            )
+            metrics_list.append(metrics)
+
+            for key, value in metrics.items():
+                args.writer.add_scalar(f"Inference/{key}_{idx}", value, log_step)
+
+            _log_inference_video(args, sample_loader, idx, all_paths, all_goal_locations, log_step)
+
+            metric_str = ", ".join(f"{key}={value}" for key, value in metrics.items())
+            print(f"Inference case {idx}: {os.path.basename(file_name)} | {metric_str}")
+        except Exception as exc:
+            print(f"Inference case {idx} failed: {exc}")
+
+    if not metrics_list:
+        return
+
+    summary = {}
+    for key in metrics_list[0]:
+        summary[key] = float(sum(metrics[key] for metrics in metrics_list) / len(metrics_list))
+        args.writer.add_scalar(f"InferenceSummary/{key}", summary[key], log_step)
+
+    summary_str = ", ".join(f"{key}={value:.4f}" for key, value in summary.items())
+    print(f"{progress_label}, Inference summary: {summary_str}")
+
+
+def _masked_entropy(logit, mask):
+    with torch.no_grad():
+        probs = torch.softmax(logit.detach(), dim=1)
+        log_probs = torch.log_softmax(logit.detach(), dim=1)
+        entropy_map = -(probs * log_probs).sum(dim=1)
+        mask_float = mask.detach().float()
+        valid = mask_float.sum()
+        if valid.item() <= 0:
+            return float("nan")
+        entropy_value = ((entropy_map * mask_float).sum() / valid).item()
+    return float(entropy_value)
+
+
+def _gpu_memory_mb(device):
+    if device.type != "cuda" or not torch.cuda.is_available():
+        return None, None, None, None
+    allocated_mb = torch.cuda.memory_allocated(device) / (1024 ** 2)
+    reserved_mb = torch.cuda.memory_reserved(device) / (1024 ** 2)
+    max_allocated_mb = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+    max_reserved_mb = torch.cuda.max_memory_reserved(device) / (1024 ** 2)
+    return float(allocated_mb), float(reserved_mb), float(max_allocated_mb), float(max_reserved_mb)
+
+
+def _reset_gpu_peak_memory(device):
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
+
+def _sync_device(device):
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.synchronize(device)
+
+
+def _log_train_step_metrics(
+    args,
+    optimizer,
+    dims,
+    log_step,
+    step_loss,
+    data_fetch_sec,
+    step_time_sec,
+    entropy_value,
+    device,
+):
+    if args.local_rank != 0:
+        return
+
+    dims_tag = f"{dims[0]}x{dims[1]}"
+    args.writer.add_scalar("Optimization/LR", optimizer.param_groups[0]["lr"], log_step)
+    args.writer.add_scalar("Loss/TrainStep", step_loss, log_step)
+    args.writer.add_scalar(f"Loss/TrainStep_{dims_tag}", step_loss, log_step)
+    args.writer.add_scalar("Time/DataFetch_s", data_fetch_sec, log_step)
+    args.writer.add_scalar("Time/Step_s", step_time_sec, log_step)
+
+    if np.isfinite(entropy_value):
+        args.writer.add_scalar("Entropy/Train", entropy_value, log_step)
+
+    allocated_mb, reserved_mb, max_allocated_mb, max_reserved_mb = _gpu_memory_mb(device)
+    if allocated_mb is not None:
+        args.writer.add_scalar("GPU/memory_allocated_mb", allocated_mb, log_step)
+        args.writer.add_scalar("GPU/memory_reserved_mb", reserved_mb, log_step)
+        args.writer.add_scalar("GPU/max_memory_allocated_mb", max_allocated_mb, log_step)
+        args.writer.add_scalar("GPU/max_memory_reserved_mb", max_reserved_mb, log_step)
+
+
+def build_lr_scheduler(args, optimizer):
+    if args.lr_decay_step_size <= 0 or args.lr_decay_gamma >= 1.0:
+        return None
+    return torch.optim.lr_scheduler.StepLR(
+        optimizer,
+        step_size=args.lr_decay_step_size,
+        gamma=args.lr_decay_gamma,
+    )
+
+
+def _downsample_video_indices(num_frames, max_frames):
+    if num_frames <= max_frames:
+        return np.arange(num_frames, dtype=np.int64)
+    return np.linspace(0, num_frames - 1, num=max_frames, dtype=np.int64)
+
+
+def _render_inference_video(sample_data, all_paths, all_goal_locations, max_frames=128, cell_size=8):
+    map_data = sample_data["feature"][0].detach().cpu().numpy()
+    height, width = map_data.shape
+
+    base = np.full((height, width, 3), 255, dtype=np.uint8)
+    obstacle_mask = map_data > 0
+    base[obstacle_mask] = np.array([32, 32, 32], dtype=np.uint8)
+
+    trail_counts = np.zeros((height, width), dtype=np.int32)
+    indices = _downsample_video_indices(len(all_paths), max_frames)
+    frames = []
+
+    for frame_idx in indices:
+        frame = base.copy()
+
+        path_positions = np.asarray(all_paths[frame_idx], dtype=np.int64)
+        goal_positions = np.asarray(all_goal_locations[frame_idx], dtype=np.int64)
+
+        for row, col in path_positions:
+            if 0 <= row < height and 0 <= col < width:
+                trail_counts[row, col] += 1
+
+        trail_mask = trail_counts > 0
+        frame[trail_mask & ~obstacle_mask] = np.array([170, 210, 255], dtype=np.uint8)
+
+        for row, col in goal_positions:
+            if 0 <= row < height and 0 <= col < width and not obstacle_mask[row, col]:
+                frame[row, col] = np.array([80, 200, 120], dtype=np.uint8)
+
+        for row, col in path_positions:
+            if 0 <= row < height and 0 <= col < width and not obstacle_mask[row, col]:
+                frame[row, col] = np.array([220, 80, 80], dtype=np.uint8)
+
+        overlap_mask = np.zeros((height, width), dtype=bool)
+        for row, col in path_positions:
+            if 0 <= row < height and 0 <= col < width:
+                overlap_mask[row, col] = True
+        for row, col in goal_positions:
+            if 0 <= row < height and 0 <= col < width and overlap_mask[row, col]:
+                frame[row, col] = np.array([255, 210, 70], dtype=np.uint8)
+
+        if cell_size > 1:
+            frame = np.repeat(np.repeat(frame, cell_size, axis=0), cell_size, axis=1)
+
+        frames.append(frame.transpose(2, 0, 1))
+
+    video = np.stack(frames, axis=0)
+    return torch.from_numpy(video).unsqueeze(0)
+
+
+def _log_inference_video(args, sample_loader, sample_idx, all_paths, all_goal_locations, log_step):
+    if args.local_rank != 0 or sample_idx != 0 or not hasattr(args.writer, "add_video"):
+        return
+
+    sample_data = sample_loader.dataset[sample_idx]
+    video = _render_inference_video(sample_data, all_paths, all_goal_locations)
+    args.writer.add_video("InferenceVideo/case_0", video, log_step, fps=4)
+
+
+def _train_offline_epoch_based(
+    args,
+    model,
+    train_loaders,
+    val_loaders,
+    sample_loader,
+    optimizer,
+    scheduler,
+    loss_fn,
+    device,
+):
+    """原有的 epoch-based offline 训练逻辑（向后兼容）"""
+    global_step = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
-        train_loss = 0
+        train_loss = 0.0
         total_agents = 0
-        for train_loader in train_loaders.values():
-            for i, batch in tqdm(enumerate(train_loader), desc=f"Epoch {epoch}/{args.epochs}", disable=args.local_rank!=0, total=len(train_loader)):
-                # # Add per-batch memory print
-                # if i % 100 == 0:  # Print every 100 batches
-                #     torch.cuda.empty_cache()
-        
-                #     # Force garbage collection
-                #     import gc
-                #     gc.collect()
-                #     total_memory = 0
-                #     main_process = psutil.Process()
-                #     processes = [main_process] + main_process.children(recursive=True)
-                #     print(f"\nBatch {i} memory usage:")
-                #     print(f"Number of processes: {len(processes)}")
-                    
-                #     for proc in processes:
-                #         try:
-                #             memory_info = proc.memory_info()
-                #             total_memory += memory_info.rss
-                #         except (psutil.NoSuchProcess, psutil.AccessDenied):
-                #             continue
-                    
-                #     print(f"Total Memory Used by All Processes: {total_memory / 1024 / 1024:.2f} MB")
-                #     system_memory = psutil.virtual_memory()
-                #     print(f"System Memory Usage: {system_memory.percent}%")
-                # Load data onto the correct device (CPU/GPU)
-                feature = batch["feature"].to(
-                    device
-                )  # shape:[batch_size, channel_num, n, m]
-                action_y = batch["action"].to(device)  # shape:[batch_size, n, m]
-                mask = batch["mask"].to(device)  # shape:[batch_size, n, m]
+        total_fetch_sec = 0.0
+        total_step_sec = 0.0
+        total_entropy = 0.0
+        entropy_count = 0
+        step_count = 0
+        dim_loss_sums = {dims: 0.0 for dims in train_loaders.keys()}
+        dim_agent_sums = {dims: 0 for dims in train_loaders.keys()}
 
-                # Forward pass
-                logit, _ = model(feature)  # shape:[batch_size, action_dim, n, m]
+        for dims, train_loader in train_loaders.items():
+            sampler = getattr(train_loader, "sampler", None)
+            if args.distributed and sampler is not None and hasattr(sampler, "set_epoch"):
+                sampler.set_epoch(epoch)
 
-                # Compute loss and apply mask
-                loss = loss_fn(logit, action_y)  # shape:[batch_size, n, m]
+            train_iter = iter(train_loader)
+            for _ in tqdm(
+                range(len(train_loader)),
+                desc=f"Epoch {epoch}/{args.epochs}",
+                disable=args.local_rank != 0,
+                total=len(train_loader),
+            ):
+                fetch_start = time.perf_counter()
+                batch = next(train_iter)
+                data_fetch_sec = time.perf_counter() - fetch_start
+
+                _sync_device(device)
+                _reset_gpu_peak_memory(device)
+                step_start = time.perf_counter()
+                feature = batch["feature"].to(device)
+                action_y = batch["action"].to(device)
+                mask = batch["mask"].to(device)
+
+                logit, _ = model(feature)
+                loss = loss_fn(logit, action_y)
                 masked_loss = loss * mask.float()
-                averaged_loss = masked_loss.sum() / mask.sum()  # scalar
-                
-                # Backward pass and optimization
+                mask_sum = mask.detach().sum().item()
+                if mask_sum <= 0:
+                    continue
+                averaged_loss = masked_loss.sum() / mask_sum
+                entropy_value = _masked_entropy(logit, mask)
+
                 optimizer.zero_grad()
                 averaged_loss.backward()
-                
-                # Update accumulated loss stats
-                train_loss += masked_loss.detach().sum().item()
-                total_agents += mask.detach().sum().item()
-
-                # Gradient clipping to prevent exploding gradients
-                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
+                _sync_device(device)
+                step_time_sec = time.perf_counter() - step_start
 
-        # Average the loss by total number of steps
-        train_loss = train_loss / total_agents  # Add this line
+                train_loss += masked_loss.detach().sum().item()
+                total_agents += mask_sum
+                total_fetch_sec += data_fetch_sec
+                total_step_sec += step_time_sec
+                if np.isfinite(entropy_value):
+                    total_entropy += entropy_value
+                    entropy_count += 1
+                step_count += 1
+                dim_loss_sums[dims] += masked_loss.detach().sum().item()
+                dim_agent_sums[dims] += mask_sum
+
+                _log_train_step_metrics(
+                    args=args,
+                    optimizer=optimizer,
+                    dims=dims,
+                    log_step=global_step,
+                    step_loss=float(averaged_loss.detach().item()),
+                    data_fetch_sec=data_fetch_sec,
+                    step_time_sec=step_time_sec,
+                    entropy_value=entropy_value,
+                    device=device,
+                )
+                global_step += 1
+
+        train_loss = train_loss / total_agents if total_agents > 0 else float("inf")
         if args.local_rank == 0:
             args.writer.add_scalar("Loss/Train", train_loss, epoch)
+            for dims in sorted(dim_loss_sums.keys()):
+                dim_agents = dim_agent_sums[dims]
+                if dim_agents <= 0:
+                    continue
+                dims_tag = f"{dims[0]}x{dims[1]}"
+                args.writer.add_scalar(f"Loss/Train_{dims_tag}", dim_loss_sums[dims] / dim_agents, epoch)
+            if step_count > 0:
+                args.writer.add_scalar("Time/DataFetch_s_epoch_avg", total_fetch_sec / step_count, epoch)
+                args.writer.add_scalar("Time/Step_s_epoch_avg", total_step_sec / step_count, epoch)
+            if entropy_count > 0:
+                args.writer.add_scalar("Entropy/Train_epoch_avg", total_entropy / entropy_count, epoch)
             print(f"Epoch {epoch}/{args.epochs}, Training mean Loss: {train_loss}")
+
         if epoch % args.eval_interval == 0:
-            for val_loader in val_loaders.values():
-                val_loss = evaluate_valid_loss(model, val_loader, loss_fn, device)
-                if args.local_rank == 0:
-                    args.writer.add_scalar("Loss/Val", val_loss, epoch)
-                    print(f"Epoch {epoch}/{args.epochs}, Validation mean Loss: {val_loss}")
-                    # sample path visualization
-                    for idx in range(len(sample_loader)):   
-                        _, _, current_goal_distance, _ = path_formation(model, sample_loader, idx, device, args.feature_type, steps=args.steps)
-                        args.writer.add_scalar(
-                            f"Loss/video_goal_dis_{idx}", current_goal_distance, epoch
-                        )
-        if epoch % args.save_interval == 0 and args.local_rank == 0:
-            file_path = os.path.join(
-                args.real_log_dir, f"model_checkpoint_epoch_{epoch}.pth"
+            run_validation(
+                args,
+                model,
+                val_loaders,
+                loss_fn,
+                device,
+                epoch,
+                f"Epoch {epoch}/{args.epochs}",
             )
+
+        inference_interval = args.inference_test_interval if args.inference_test_interval > 0 else args.eval_interval
+        if inference_interval > 0 and epoch % inference_interval == 0:
+            run_inference_test(
+                args,
+                model,
+                sample_loader,
+                device,
+                epoch,
+                f"Epoch {epoch}/{args.epochs}",
+            )
+
+        if epoch % args.save_interval == 0 and args.local_rank == 0:
+            file_path = os.path.join(args.real_log_dir, f"model_checkpoint_epoch_{epoch}.pth")
             if args.distributed:
                 torch.save(model.module.state_dict(), file_path)
             else:
                 torch.save(model.state_dict(), file_path)
+
+
+def train_offline(
+    args,
+    model,
+    train_loaders,
+    train_loader_weights,
+    val_loaders,
+    sample_loader,
+    optimizer,
+    scheduler,
+    loss_fn,
+    device,
+):
+    """Offline 训练入口：支持 step-based 和 epoch-based 两种模式"""
+    use_step_based = args.offline_total_steps > 0
+
+    if not use_step_based:
+        # 向后兼容：使用原有 epoch-based 逻辑
+        _train_offline_epoch_based(
+            args,
+            model,
+            train_loaders,
+            val_loaders,
+            sample_loader,
+            optimizer,
+            scheduler,
+            loss_fn,
+            device,
+        )
+        return
+
+    # 新的 step-based 逻辑
+    offline_schedule = get_offline_schedule(args)
+
+    dims_list = sorted(train_loaders.keys())
+    weights = np.array([max(train_loader_weights.get(dims, 0), 1) for dims in dims_list], dtype=np.float64)
+    weights_sum = float(weights.sum())
+    if weights_sum <= 0:
+        weights = np.ones(len(dims_list), dtype=np.float64)
+        weights_sum = float(weights.sum())
+    probs = weights / weights_sum
+
+    rng = np.random.default_rng(args.seed + args.local_rank * 1000003 + 17)
+    train_iters = {dims: iter(loader) for dims, loader in train_loaders.items()}
+    exhausted_dims = set()
+
+    # 累加器（和 online 一样）
+    train_loss_window_t = torch.zeros(1, device=device)
+    total_agents_window_t = torch.zeros(1, device=device)
+    fetch_time_window = 0.0
+    step_time_window = 0.0
+    entropy_sum_window = 0.0
+    entropy_count_window = 0
+    window_step_count = 0
+    dim_loss_window_t = {dims: torch.zeros(1, device=device) for dims in dims_list}
+    dim_agents_window_t = {dims: torch.zeros(1, device=device) for dims in dims_list}
+    total_steps = offline_schedule["total_steps"]
+
+    model.train()
+
+    for step in tqdm(
+        range(1, total_steps + 1),
+        desc="Offline Train (step-based)",
+        disable=args.local_rank != 0,
+        total=total_steps,
+    ):
+        # 过滤掉已耗尽的 dims
+        available_dims = [d for d in dims_list if d not in exhausted_dims]
+        if not available_dims:
+            if args.local_rank == 0:
+                print(f"\n所有数据已耗尽，在 step {step}/{total_steps} 提前结束训练")
+            break
+
+        # 重新计算可用 dims 的采样概率
+        available_indices = [dims_list.index(d) for d in available_dims]
+        available_probs = np.array([probs[idx] for idx in available_indices])
+        available_probs = available_probs / available_probs.sum()
+
+        # 随机选择一个 dims
+        dims = available_dims[int(rng.choice(len(available_dims), p=available_probs))]
+        train_iter = train_iters[dims]
+
+        # 尝试获取 batch
+        fetch_start = time.perf_counter()
+        try:
+            batch = next(train_iter)
+        except StopIteration:
+            # 这个 dims 的数据耗尽了，标记并跳过
+            exhausted_dims.add(dims)
+            if args.local_rank == 0:
+                print(f"\nDims {dims} 数据耗尽，剩余可用 dims: {len(available_dims) - 1}")
+            continue
+        data_fetch_sec = time.perf_counter() - fetch_start
+
+        step_start = time.perf_counter()
+        feature = batch["feature"].to(device, non_blocking=True)
+        action_y = batch["action"].to(device, non_blocking=True)
+        mask = batch["mask"].to(device, non_blocking=True)
+
+        logit, _ = model(feature)
+        loss = loss_fn(logit, action_y)
+        masked_loss = loss * mask.float()
+        mask_sum_t = mask.detach().sum()
+        averaged_loss = masked_loss.sum() / mask_sum_t.clamp(min=1)
+
+        optimizer.zero_grad()
+        averaged_loss.backward()
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+        step_time_sec = time.perf_counter() - step_start
+
+        # GPU tensor 累加，零 .item() 调用
+        with torch.no_grad():
+            train_loss_window_t += masked_loss.detach().sum()
+            total_agents_window_t += mask_sum_t
+            dim_loss_window_t[dims] += masked_loss.detach().sum()
+            dim_agents_window_t[dims] += mask_sum_t
+        fetch_time_window += data_fetch_sec
+        step_time_window += step_time_sec
+        window_step_count += 1
+
+        # 只在需要 log 时才 .item() 同步
+        should_log_step = (step % 100 == 0 or step == total_steps)
+        should_eval = (
+            step % offline_schedule["eval_interval_steps"] == 0 or step == total_steps
+        )
+        should_infer = (
+            step % offline_schedule["inference_interval_steps"] == 0 or step == total_steps
+        )
+        should_save = (
+            step % offline_schedule["save_interval_steps"] == 0 or step == total_steps
+        )
+        should_report = should_eval or should_infer or should_save or step == total_steps
+
+        if should_log_step or should_report:
+            loss_scalar = averaged_loss.detach().item()
+            entropy_value = _masked_entropy(logit, mask)
+            if np.isfinite(entropy_value):
+                entropy_sum_window += entropy_value
+                entropy_count_window += 1
+
+        if should_log_step:
+            _log_train_step_metrics(
+                args=args,
+                optimizer=optimizer,
+                dims=dims,
+                log_step=step,
+                step_loss=loss_scalar,
+                data_fetch_sec=data_fetch_sec,
+                step_time_sec=step_time_sec,
+                entropy_value=entropy_value,
+                device=device,
+            )
+            if args.local_rank == 0:
+                args.writer.add_scalar("Loss/Train", loss_scalar, step)
+
+        if should_report and args.local_rank == 0:
+            total_agents_window = total_agents_window_t.item()
+            if total_agents_window > 0:
+                train_loss = train_loss_window_t.item() / total_agents_window
+                args.writer.add_scalar("Loss/Train_window_avg", train_loss, step)
+                for dims_key in dims_list:
+                    dim_agents = dim_agents_window_t[dims_key].item()
+                    if dim_agents <= 0:
+                        continue
+                    dims_tag = f"{dims_key[0]}x{dims_key[1]}"
+                    args.writer.add_scalar(f"Loss/Train_{dims_tag}", dim_loss_window_t[dims_key].item() / dim_agents, step)
+            if window_step_count > 0:
+                args.writer.add_scalar("Time/DataFetch_s_window_avg", fetch_time_window / window_step_count, step)
+                args.writer.add_scalar("Time/Step_s_window_avg", step_time_window / window_step_count, step)
+            if entropy_count_window > 0:
+                args.writer.add_scalar("Entropy/Train_window_avg", entropy_sum_window / entropy_count_window, step)
+            print(f"Step {step}/{total_steps}, Training mean Loss: {train_loss}")
+            train_loss_window_t.zero_()
+            total_agents_window_t.zero_()
+            fetch_time_window = 0.0
+            step_time_window = 0.0
+            entropy_sum_window = 0.0
+            entropy_count_window = 0
+            window_step_count = 0
+            for dims_key in dims_list:
+                dim_loss_window_t[dims_key].zero_()
+                dim_agents_window_t[dims_key].zero_()
+
+        progress_label = f"Step {step}/{total_steps}"
+        if should_eval:
+            run_validation(args, model, val_loaders, loss_fn, device, step, progress_label)
+            model.train()
+
+        if should_infer:
+            run_inference_test(args, model, sample_loader, device, step, progress_label)
+            model.train()
+
+        if should_save and args.local_rank == 0:
+            file_path = os.path.join(args.real_log_dir, f"model_checkpoint_step_{step}.pth")
+            if args.distributed:
+                torch.save(model.module.state_dict(), file_path)
+            else:
+                torch.save(model.state_dict(), file_path)
+
+
+def train_online(
+    args,
+    model,
+    train_loaders,
+    train_loader_weights,
+    val_loaders,
+    sample_loader,
+    optimizer,
+    scheduler,
+    loss_fn,
+    device,
+):
+    online_schedule = get_online_schedule(args)
+
+    dims_list = sorted(train_loaders.keys())
+    weights = np.array([max(train_loader_weights.get(dims, 0), 1) for dims in dims_list], dtype=np.float64)
+    weights_sum = float(weights.sum())
+    if weights_sum <= 0:
+        weights = np.ones(len(dims_list), dtype=np.float64)
+        weights_sum = float(weights.sum())
+    probs = weights / weights_sum
+
+    rng = np.random.default_rng(args.seed + args.local_rank * 1000003 + 17)
+    train_iters = {dims: iter(loader) for dims, loader in train_loaders.items()}
+    # 用 GPU tensor 累加，避免每步 .item() 同步
+    train_loss_window_t = torch.zeros(1, device=device)
+    total_agents_window_t = torch.zeros(1, device=device)
+    fetch_time_window = 0.0
+    step_time_window = 0.0
+    entropy_sum_window = 0.0
+    entropy_count_window = 0
+    window_step_count = 0
+    dim_loss_window_t = {dims: torch.zeros(1, device=device) for dims in dims_list}
+    dim_agents_window_t = {dims: torch.zeros(1, device=device) for dims in dims_list}
+    total_steps = online_schedule["total_steps"]
+
+    for step in tqdm(
+        range(1, total_steps + 1),
+        desc="Online Train",
+        disable=args.local_rank != 0,
+        total=total_steps,
+    ):
+        dims = dims_list[int(rng.choice(len(dims_list), p=probs))]
+        train_loader = train_loaders[dims]
+        train_iter = train_iters[dims]
+        fetch_start = time.perf_counter()
+        try:
+            batch = next(train_iter)
+        except StopIteration:
+            train_iter = iter(train_loader)
+            train_iters[dims] = train_iter
+            batch = next(train_iter)
+        data_fetch_sec = time.perf_counter() - fetch_start
+
+        step_start = time.perf_counter()
+        feature = batch["feature"].to(device, non_blocking=True)
+        action_y = batch["action"].to(device, non_blocking=True)
+        mask = batch["mask"].to(device, non_blocking=True)
+
+        logit, _ = model(feature)
+        loss = loss_fn(logit, action_y)
+        masked_loss = loss * mask.float()
+        mask_sum_t = mask.detach().sum()
+        averaged_loss = masked_loss.sum() / mask_sum_t.clamp(min=1)
+
+        optimizer.zero_grad()
+        averaged_loss.backward()
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+        step_time_sec = time.perf_counter() - step_start
+
+        # GPU tensor 累加，零 .item() 调用
+        with torch.no_grad():
+            train_loss_window_t += masked_loss.detach().sum()
+            total_agents_window_t += mask_sum_t
+            dim_loss_window_t[dims] += masked_loss.detach().sum()
+            dim_agents_window_t[dims] += mask_sum_t
+        fetch_time_window += data_fetch_sec
+        step_time_window += step_time_sec
+        window_step_count += 1
+
+        # 只在需要 log 时才 .item() 同步
+        should_log_step = (step % 100 == 0 or step == total_steps)
+        should_eval = (
+            step % online_schedule["eval_interval_steps"] == 0 or step == total_steps
+        )
+        should_infer = (
+            step % online_schedule["inference_interval_steps"] == 0 or step == total_steps
+        )
+        should_save = (
+            step % online_schedule["save_interval_steps"] == 0 or step == total_steps
+        )
+        should_report = should_eval or should_infer or should_save or step == total_steps
+
+        if should_log_step or should_report:
+            loss_scalar = averaged_loss.detach().item()
+            entropy_value = _masked_entropy(logit, mask)
+            if np.isfinite(entropy_value):
+                entropy_sum_window += entropy_value
+                entropy_count_window += 1
+
+        if should_log_step:
+            _log_train_step_metrics(
+                args=args,
+                optimizer=optimizer,
+                dims=dims,
+                log_step=step,
+                step_loss=loss_scalar,
+                data_fetch_sec=data_fetch_sec,
+                step_time_sec=step_time_sec,
+                entropy_value=entropy_value,
+                device=device,
+            )
+            if args.local_rank == 0:
+                args.writer.add_scalar("Loss/Train", loss_scalar, step)
+
+        if should_report and args.local_rank == 0:
+            total_agents_window = total_agents_window_t.item()
+            if total_agents_window > 0:
+                train_loss = train_loss_window_t.item() / total_agents_window
+                args.writer.add_scalar("Loss/Train_window_avg", train_loss, step)
+                for dims_key in dims_list:
+                    dim_agents = dim_agents_window_t[dims_key].item()
+                    if dim_agents <= 0:
+                        continue
+                    dims_tag = f"{dims_key[0]}x{dims_key[1]}"
+                    args.writer.add_scalar(f"Loss/Train_{dims_tag}", dim_loss_window_t[dims_key].item() / dim_agents, step)
+            if window_step_count > 0:
+                args.writer.add_scalar("Time/DataFetch_s_window_avg", fetch_time_window / window_step_count, step)
+                args.writer.add_scalar("Time/Step_s_window_avg", step_time_window / window_step_count, step)
+            if entropy_count_window > 0:
+                args.writer.add_scalar("Entropy/Train_window_avg", entropy_sum_window / entropy_count_window, step)
+            print(f"Step {step}/{total_steps}, Training mean Loss: {train_loss}")
+            train_loss_window_t.zero_()
+            total_agents_window_t.zero_()
+            fetch_time_window = 0.0
+            step_time_window = 0.0
+            entropy_sum_window = 0.0
+            entropy_count_window = 0
+            window_step_count = 0
+            for dims_key in dims_list:
+                dim_loss_window_t[dims_key].zero_()
+                dim_agents_window_t[dims_key].zero_()
+
+        progress_label = f"Step {step}/{total_steps}"
+        if should_eval:
+            run_validation(args, model, val_loaders, loss_fn, device, step, progress_label)
+            model.train()
+
+        if should_infer:
+            run_inference_test(args, model, sample_loader, device, step, progress_label)
+            model.train()
+
+        if should_save and args.local_rank == 0:
+            file_path = os.path.join(args.real_log_dir, f"model_checkpoint_step_{step}.pth")
+            if args.distributed:
+                torch.save(model.module.state_dict(), file_path)
+            else:
+                torch.save(model.state_dict(), file_path)
+
+
+def train(
+    args,
+    model,
+    train_loaders,
+    train_loader_weights,
+    val_loaders,
+    sample_loader,
+    optimizer,
+    scheduler,
+    loss_fn,
+    device,
+):
+    if args.dataset_mode == "online":
+        train_online(
+            args,
+            model,
+            train_loaders,
+            train_loader_weights,
+            val_loaders,
+            sample_loader,
+            optimizer,
+            scheduler,
+            loss_fn,
+            device,
+        )
+        return
+
+    train_offline(
+        args,
+        model,
+        train_loaders,
+        train_loader_weights,
+        val_loaders,
+        sample_loader,
+        optimizer,
+        scheduler,
+        loss_fn,
+        device,
+    )
 
 if __name__ == "__main__":
 
@@ -138,16 +1226,12 @@ if __name__ == "__main__":
     else:
         args.local_rank = 0    
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+    args.current_time = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     args.real_log_dir = os.path.join(args.log_dir, f"{args.current_time}")
-    
-    # 只在主进程上创建tensorboard writer
-    if args.local_rank == 0:
-        args.writer = SummaryWriter(log_dir=args.real_log_dir)
-        args_dict = vars(args)
-        args_str = "\n".join([f"{key}: {value}" for key, value in args_dict.items()])
-        args.writer.add_text("Args", args_str, 0)
-        print(args_str)
+    args.writer = NullSummaryWriter()
 
     # Set seeds
     random.seed(args.seed)
@@ -158,7 +1242,7 @@ if __name__ == "__main__":
 
     # model
     if args.model == "unet":
-        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear)
+        net = UNet(n_channels=args.feature_dim, n_classes=args.action_dim, first_layer_channels=args.first_layer_channels, bilinear=args.bilinear, blocks_per_stage=args.blocks_per_stage)
     elif args.model == "cnn":
         net = CNN(n_channels=args.feature_dim, n_classes=args.action_dim)
     if args.model_path:
@@ -168,118 +1252,90 @@ if __name__ == "__main__":
     if args.distributed:
         net = DDP(net, device_ids=[args.local_rank])
 
-    # 只在主进程上打印模型信息
-    if args.local_rank == 0:
-        total_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
-        model_memory = total_params * 4 / (1024**2)
-        print(f"参数总数 (parameter):{total_params}")
-        print(f"模型大小约为 (model size):{model_memory:.2f} MB")
-
     optimizer = torch.optim.AdamW(
         net.parameters(),
         lr=args.lr,
         betas=(0.9, 0.999),  # 默认值, 适合大多数情况
         weight_decay=args.weight_decay,
     )
+    scheduler = build_lr_scheduler(args, optimizer)
     loss_fn = nn.CrossEntropyLoss(reduction="none")
 
-    # dataset
-    train_loaders = {}  # Dictionary to store loaders by map dimensions
-    val_loaders = {}
-    
-    def get_map_dims(filename):
-        # Extract h,w from filename like 'maze-32-32-20-0-32-0-0.mbin' or 'maze-32-32-20-0-32-0-0.bin'
-        parts = os.path.basename(filename).split('-')
-        return (int(parts[1]), int(parts[2]))
-
-    # 只处理.mbin文件
-    dimension_groups = {}
-    
-    # 查找所有.mbin文件
-    mbin_files = glob.glob(os.path.join(args.dataset_path, "**/*.mbin"), recursive=True)
-    if not mbin_files:
-        if args.local_rank == 0:
-            print("❌ 未找到.mbin文件, 请先运行数据转换")
-        exit(1)
-    
-    if args.local_rank == 0:
-        print(f"找到 {len(mbin_files)} 个.mbin文件")
-    
-    for file in mbin_files:
-        dims = get_map_dims(file)
-        if dims not in dimension_groups:
-            dimension_groups[dims] = []
-        dimension_groups[dims].append(file)
-
-    # 过滤掉太小的地图（UNet无法处理）
-    min_map_size = 32  # UNet需要至少32x32的地图
-    filtered_dimension_groups = {}
-    
-    for dims, files in dimension_groups.items():
-        if dims[0] >= min_map_size and dims[1] >= min_map_size:
-            filtered_dimension_groups[dims] = files
+    try:
+        val_loaders, available_val_mbin = create_offline_validation_loaders(args)
+        if args.dataset_mode == "online":
+            train_loaders, train_loader_weights = create_online_train_loaders(args)
         else:
-            if args.local_rank == 0:
-                print(f"跳过太小的地图尺寸 {dims}, 包含 {len(files)} 个文件")
-    
-    dimension_groups = filtered_dimension_groups
-    
-    if not dimension_groups:
+            train_loaders, train_loader_weights = create_offline_train_loaders(args)
+    except RuntimeError as error:
         if args.local_rank == 0:
-            print("❌ 没有找到合适大小的地图数据")
-        exit(1)
+            print(str(error))
+        raise SystemExit(1)
 
-    # Create separate dataloaders for each dimension group
-    for dims, files in dimension_groups.items():
-        n_files = len(files)
-        indices = list(range(n_files))
-        
-        n_test = int(0.1 * n_files)
-        test_indices = indices[:n_test]
-        train_indices = indices[n_test:]
-        
-        test_list = [files[i] for i in test_indices]
-        train_list = [files[i] for i in train_indices]
-        
-        if args.local_rank == 0:
-            print(f"Map size {dims} - train_list size: {len(train_list)}, test_list size: {len(test_list)}")
+    sample_loader = None
+    sample_candidates = []
+    if args.inference_num_cases > 0:
+        sample_candidates = [path for path in args.sample_data_path if os.path.isfile(path)]
+        if not sample_candidates and available_val_mbin:
+            sample_candidates = available_val_mbin[: args.inference_num_cases]
+        else:
+            sample_candidates = sample_candidates[: args.inference_num_cases]
+        if not sample_candidates:
+            print("❌ 未找到sample数据的.mbin文件")
+            raise SystemExit(1)
 
-        # 使用统一的.mbin数据集类
-        train_data = MAPFDataset(train_list, args.feature_dim, args.feature_type)
-        test_data = MAPFDataset(test_list, args.feature_dim, args.feature_type)
-        
-        # 为分布式训练添加采样器
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_data) if args.distributed else None
-        val_sampler = torch.utils.data.distributed.DistributedSampler(test_data) if args.distributed else None
-
-        train_loader = DataLoader(
-            train_data,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            sampler=train_sampler
+        sample_data = MAPFDataset(
+            sample_candidates,
+            args.feature_dim,
+            args.feature_type,
+            first_step=True,
         )
-        val_loader = DataLoader(
-            test_data,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            sampler=val_sampler
+        sample_loader = DataLoader(
+            sample_data,
+            **make_dataloader_kwargs(
+                1,
+                args.num_workers,
+                shuffle=False,
+            ),
         )
 
-        train_loaders[dims] = train_loader
-        val_loaders[dims] = val_loader
-    
-    # 为sample_data查找对应的.mbin文件
-    available_mbin = glob.glob("data/input_data/**/*.mbin", recursive=True)
-    if available_mbin:
-        sample_data = MAPFDataset([available_mbin[0]], args.feature_dim, args.feature_type, first_step=True)
-    else:
-        print("❌ 未找到sample数据的.mbin文件")
-        exit(1)
-    sample_loader = DataLoader(
-        sample_data,
-        shuffle=False,
-        batch_size=1,
-        num_workers=1,
+    online_schedule = get_online_schedule(args) if args.dataset_mode == "online" else None
+    estimated_total_train_steps = estimate_total_train_steps(args, train_loaders)
+    setup_run_logging(args, estimated_total_train_steps)
+
+    print_runtime_summary(
+        args,
+        net,
+        device,
+        train_loaders,
+        train_loader_weights,
+        val_loaders,
+        sample_candidates,
+        online_schedule,
     )
-    # train
-    train(args, net, train_loaders, val_loaders, sample_loader, optimizer, loss_fn, device)
+    try:
+        train(
+            args,
+            net,
+            train_loaders,
+            train_loader_weights,
+            val_loaders,
+            sample_loader,
+            optimizer,
+            scheduler,
+            loss_fn,
+            device,
+        )
+        _exit_code = 0
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        _exit_code = 1
+    finally:
+        close_loader_collection(train_loaders)
+        args.writer.flush()
+        args.writer.close()
+        if args.num_workers > 0:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(_exit_code)

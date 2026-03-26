@@ -1,0 +1,44 @@
+# 默认离线训练模板配置。Default OFFLINE training template config.
+# 推荐：
+# - config.yaml / config.offline.yaml 用于离线训练。Use config.yaml / config.offline.yaml for offline training.
+# - config.online.yaml 用于在线训练。Use config.online.yaml for online training.
+# train.py 当前仍直接读取命令行参数，这个 YAML 主要用于集中查看和编辑默认项。train.py still reads CLI arguments directly; this YAML is mainly a centralized place for reference and editing.
+
+# 日志与随机种子。Logging and seed.
+seed: 1919180  # 随机种子。Random seed.
+log_dir: runs  # TensorBoard 和日志输出目录。TensorBoard and log output directory.
+
+# 数据。Dataset.
+dataset_path: data/input_data  # 离线训练数据根目录。Root directory of the offline training dataset.
+val_dataset_path: null  # 固定离线验证集根目录，null 表示回退到 dataset_path。Root directory of the fixed offline validation set; null falls back to dataset_path.
+dataset_mode: offline  # 数据模式，这份模板默认是 offline。Dataset mode; this template defaults to offline.
+sample_data_path:  # 训练中 inference test 使用的固定离线 .mbin 样本列表。Fixed offline .mbin samples used by inference test during training.
+  - data/input_data/maze-32-32-10-1-75/maze-32-32-10-1-75-0-16.mbin
+inference_num_cases: 1  # 每次 inference test 运行的固定样本数量。Number of fixed sample cases evaluated in each inference test.
+inference_test_interval: 0  # 离线模式下每隔多少个 epoch 跑一次 inference test，0 表示复用 eval_interval。Run inference test every N epochs in offline mode; 0 means reuse eval_interval.
+inference_action_choice: max  # inference rollout 的动作选择策略，max 更稳定，sample 更随机。Action selection strategy for inference rollout; max is more stable while sample is more stochastic.
+inference_collision_shield: naive  # inference rollout 的冲突处理，naive 为原实现，cs_pibt 为论文里的 Collision Shield PIBT。Collision handling for inference rollout.
+cspibt_preference_type: sampled  # 仅在 cs_pibt 下生效；sampled 更贴近论文，sorted 是确定性消融。Only used with cs_pibt; sampled matches the paper more closely.
+num_workers: 20  # DataLoader worker 数。Number of DataLoader workers.
+
+# 优化。Optimization.
+epochs: 100  # 离线训练总 epoch 数。Total training epochs for offline mode.
+batch_size: 64  # 训练 batch size。Training batch size.
+learning_rate: 1.0e-5  # 学习率。Learning rate.
+weight_decay: 1.0e-3  # AdamW 权重衰减。AdamW weight decay.
+lr_decay_step_size: 40000  # StepLR 的步长（按 optimizer step 计）。StepLR interval in optimizer steps.
+lr_decay_gamma: 0.5  # StepLR 的衰减倍率。StepLR multiplicative decay factor.
+eval_interval: 2  # 每隔多少个 epoch 做一次验证。Run validation every N epochs.
+save_interval: 2  # 每隔多少个 epoch 保存一次 checkpoint。Save a checkpoint every N epochs.
+
+# 模型与 rollout。Model and rollout.
+feature_dim: 6  # 输入特征维度。Input feature dimension.
+feature_type: gradient  # 特征构造方式。Feature construction type.
+steps: 300  # inference rollout 的最大步数。Maximum rollout steps for inference.
+action_dim: 5  # 动作类别数。Number of action classes.
+model: unet  # 模型类型，可选 unet 或 cnn。Model type, typically unet or cnn.
+bilinear: false  # 是否在 UNet 中使用双线性上采样。Whether to use bilinear upsampling in UNet.
+first_layer_channels: 64  # UNet 首层基础通道数，是主要模型规模控制旋钮之一。First-layer base channel count in UNet; one of the main model scaling knobs.
+blocks_per_stage: 1  # 每个 UNet stage 的 ResBlock 数；0 表示退回旧版 DoubleConv。Number of ResBlocks per UNet stage; 0 falls back to legacy DoubleConv.
+distributed: false  # 是否启用分布式训练。Whether to enable distributed training.
+model_path: null  # 预训练模型或断点权重路径，null 表示从头开始。Path to a pretrained model or checkpoint; null means train from scratch.

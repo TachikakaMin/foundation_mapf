@@ -2,9 +2,13 @@
 
 ## 文件作用
 
-这个文件实现了面向 `.mbin` 合并数据的 `MAPFDataset`。相比 [MAPF_dataset.py](/home/yimin/research/RAILGUN/MAPF_dataset.py)，它支持一个文件内包含多个场景，并且默认走缓存距离图和 C++ 特征构建扩展，适合训练阶段的大规模数据加载。
+这个文件实现了面向 `.mbin` 合并数据的 `MAPFDataset`。相比 [MAPF_dataset.py](/home/yimin/research/RAILGUN/MAPF_dataset.py)，它支持一个文件内包含多个场景，并且默认走缓存距离图和 C++ 特征构建扩展。
 
-它主要被 [train.py](/home/yimin/research/RAILGUN/train.py) 使用。
+在当前代码里，它主要用于：
+
+- `train.py` 的离线训练模式
+- `train.py` 的固定离线验证集
+- `train.py` 中用于 `path_formation()` 的 sample 数据
 
 ## 主要接口
 
