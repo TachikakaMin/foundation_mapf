@@ -12,13 +12,21 @@ from .utils import (
 )
 
 
+# Channel-to-move mapping the released checkpoint actually predicts.
+# Verified with a single-agent diagnostic on an empty 32x32 grid: the
+# model places highest probability on channel 1 when the goal is at
+# col-1 (LEFT) and on channel 2 when the goal is at col+1 (RIGHT). The
+# previous table had 1/2 labeled the opposite way, which was self-
+# consistent inside this repo's own simulator (move_agent applied the
+# same wrong assumption that built the training labels) but produced
+# the wrong move whenever this table was consumed by anything else.
 ACTION_DELTAS = torch.tensor(
     [
         [0, 0],   # stay
-        [0, 1],   # right
-        [0, -1],  # left
-        [-1, 0],  # up
-        [1, 0],   # down
+        [0, -1],  # 1: left  (col-1)
+        [0, 1],   # 2: right (col+1)
+        [-1, 0],  # 3: up    (row-1)
+        [1, 0],   # 4: down  (row+1)
     ],
     dtype=torch.int64,
 )
